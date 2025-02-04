@@ -84,15 +84,14 @@ def fetch_alerts(active_only=True):
 
 def fetch_low_batteries():
     session = SessionLocal()
-    threshold_date = datetime.utcnow() - timedelta(days=3)
-    query = session.query(Battery).filter(Battery.battery_level < 10, Battery.timestamp >= threshold_date)
+    query = session.query(Battery).filter(Battery.state_of_energy_1 < 10)
     low_batteries = pd.read_sql(query.statement, session.bind)
     session.close()
     return low_batteries
 
 def fetch_all_batteries():
     session = SessionLocal()
-    query = session.query(Battery).order_by(Battery.battery_level.asc())
+    query = session.query(Battery).order_by(Battery.state_of_energy_1.asc())
     all_batteries = pd.read_sql(query.statement, session.bind)
     session.close()
     return all_batteries
