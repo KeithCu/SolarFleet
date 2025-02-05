@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from api_keys import SOLAREDGE_API_KEY
 
 SOLAREDGE_BASE_URL = f'https://monitoringapi.solaredge.com'
+SOLAREDGE_V2_URL = SOLAREDGE_BASE_URL + f'/v2'
 
 class SolarEdgePlatform(SolarPlatform):
     def __init__(self):
@@ -60,16 +61,26 @@ class SolarEdgePlatform(SolarPlatform):
             return battery_states
 
         except requests.exceptions.RequestException as e:
-            print(f"Error retrieving SolarEdge battery data for site {site_id}: {e}")
+            self.log(f"Error retrieving SolarEdge battery data for site {site_id}: {e}")
             return []
     
+
     def get_alerts(self, site_id):
+        site_id = '1868399'
         """Retrieve the list of SolarEdge alerts for a specific site."""
-        url = SOLAREDGE_BASE_URL + f'/site/{site_id}/alerts?api_key={self.api_key}'
+        url = SOLAREDGE_V2_URL + f'/site/{site_id}/alerts'
         try:
+            headers = {
+            "X-Account-Key": "",
+            "Accept": "application/json, application/problem+json",
+            "X-API-Key": self.api_key
+            }
             response = requests.get(url)
             response.raise_for_status()
-            return response.json().get('alerts', [])
+            alert = response.json().get('details').get('')
+            if alert > 0:
+                return [alert]
+            return []
         except requests.exceptions.RequestException as e:
             print(f"Failed to retrieve SolarEdge alerts: {e}")
             return []
@@ -77,51 +88,35 @@ class SolarEdgePlatform(SolarPlatform):
 def main():
     platform = SolarEdgePlatform()
 
-    print("Testing get_sites() API call...")
+    platform.log("Testing get_sites() API call...")
     try:
         sites = platform.get_sites()
         if sites:
-            print("Retrieved Sites:")
+            platform.log("Retrieved Sites:")
             for site in sites:
-                print(f"  ID: {site['id']}, Name: {site['name']}")
+                platform.log(f"  ID: {site['id']}, Name: {site['name']}")
         else:
-            print("No sites found.")
+            platform.log("No sites found.")
             return  # Nothing to test if no sites are found.
     except Exception as e:
-        print(f"Error while fetching sites: {e}")
+        platform.log(f"Error while fetching sites: {e}")
         return
 
-    # Loop over each site to test the battery SoC retrieval robustly.
-    print("\nTesting get_batteries_soc() API call for each site:")
+    # Fetch all SolarEdge alerts
+    platform.log("\nFetching alerts and other info for each site:")
     for site in sites:
         site_id = site['id']
-        print(f"\nSite ID: {site_id} - {site['name']}")
+        platform.log(f"\nSite ID: {site_id} - {site['name']}")
         try:
-            batteries = platform.get_batteries_soc(site_id)
-            if batteries:
-                for battery in batteries:
-                    soc = battery.get('stateOfEnergy')
-                    print(f"  Battery Serial Number: {battery.get('serial_number')}, "
-                          f"Model: {battery.get('model_number')}, "
-                          f"SoC: {soc if soc is not None else 'N/A'}")
+            alerts = platform.get_alerts(site_id)
+            if alerts is not None:
+                for alert in alerts:
+                    platform.log("Retrieved Alerts:")
+                    platform.log(f"  Alert ID: {alert}")
             else:
-                print("  No battery data found for this site.")
+                platform.log("No alerts found for this site.")
         except Exception as e:
-            print(f"  Error fetching battery data for site {site_id}: {e}")
-
-    # Optionally, also test alerts if needed.
-    print("\nTesting get_alerts() API call for the first site:")
-    first_site_id = sites[0]['id']
-    try:
-        alerts = platform.get_alerts(first_site_id)
-        if alerts:
-            print("Retrieved Alerts:")
-            for alert in alerts:
-                print(f"  Alert ID: {alert.get('id')}, Message: {alert.get('message')}")
-        else:
-            print("No alerts found for this site.")
-    except Exception as e:
-        print(f"Error while fetching alerts for site {first_site_id}: {e}")
+            platform.log(f"Error while fetching alerts for site {site_id}: {e}")
 
 if __name__ == "__main__":
     main()

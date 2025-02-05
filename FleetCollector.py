@@ -14,33 +14,7 @@ Base = declarative_base()
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 
-sys.path.insert(0, '.')
-from Enphase import *
-from SolarEdge import *
-from SolArk import *
-
-# Define tables
-class Alert(Base):
-    __tablename__ = "alerts"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    inverter = Column(String, nullable=False)
-    alert_type = Column(String, nullable=False)
-    message = Column(String, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    resolved = Column(Boolean, default=False)
-    history = Column(String, default="")  # Track changes/updates
-
-# Battery schema to store last 3 data points
-class Battery(Base):
-    __tablename__ = "batteries"
-    serial_number = Column(String, primary_key=True)
-    model_number = Column(String, nullable=False)
-    site_id = Column(String, nullable=False)
-    site_name = Column(String, nullable=False)
-    state_of_energy_1 = Column(Float, nullable=True)
-    state_of_energy_2 = Column(Float, nullable=True)
-    state_of_energy_3 = Column(Float, nullable=True)
-    last_updated = Column(DateTime, default=datetime.utcnow)
+from SolarPlatform import Battery, Alert
 
 # Initialize database
 def init_db():
@@ -108,33 +82,54 @@ def update_battery_data(site_id, site_name, batteries):
     session.commit()
     session.close()
 
+from SolarEdge import SolarEdgePlatform
 
 def main():
     init_db()
-    if is_data_recent():
+
+    platform = SolarEdgePlatform()
+
+    if False and is_data_recent():
         print("Skipping updates as data is recent enough.")
         return
 
-    SOLAREDGE_API_KEY = 'kkkk'
-    solaredge_sites = get_solaredge_sites(SOLAREDGE_API_KEY)
-    for site in solaredge_sites:
-        site_id = site.get('id')
-        site_name = site.get('name')
-        batteries = get_solaredge_battery_state_of_energy(SOLAREDGE_API_KEY, site_id)
-        update_battery_data(site_id, site_name, batteries)
+    sites = platform.get_sites()
 
-    global ENPHASE_ACCESS_TOKEN
-    ENPHASE_ACCESS_TOKEN = authenticate_enphase()
-    if not ENPHASE_ACCESS_TOKEN:
-        print("Unable to authenticate with Enphase API.")
-        return
+    # # Loop over each site to test the battery SoC retrieval robustly.
+    # print("\nTesting get_batteries_soc() API call for each site:")
+    # for site in sites:
+    #     site_id = site['id']
+    #     site_name = site['name']
+    #     print(f"\nSite ID: {site_id} - {site['name']}")
+    #     try:
+    #         batteries = platform.get_batteries_soc(site_id)
+    #         update_battery_data(site_id, site_name, batteries)
 
-    enphase_systems = get_enphase_systems()
-    for system in enphase_systems:
-        system_id = system.get('system_id')
-        system_name = system.get('name')
-        batteries = get_enphase_battery_state_of_energy(system_id)
-        update_battery_data(system_id, system_name, batteries)
+    #         if batteries:
+    #             for battery in batteries:
+    #                 soc = battery.get('state_of_energy')
+    #                 print(f"  Battery Serial Number: {battery.get('serial_number')}, "
+    #                       f"Model: {battery.get('model_number')}, "
+    #                       f"SoC: {soc if soc is not None else 'N/A'}")
+    #         else:
+    #             print("  No battery data found for this site.")
+    #     except Exception as e:
+    #         print(f"  Error fetching battery data for site {site_id}: {e}")
+
+    # Fetch SolarEdge alerts
+    print("\nFetching alerts and other info for each site:")
+    for site in sites:
+        site_id = site['id']
+        print(f"\nSite ID: {site_id} - {site['name']}")
+        try:
+            alerts = platform.get_alerts(site_id)
+            for alert in alerts:
+                if alert > 0:
+                    add_alert_if_not_exists("SolarEdge", site_id, alert)
+            else:
+                print("No alerts found for this site.")
+        except Exception as e:
+            print(f"Error while fetching alerts for site {site_id}: {e}")
 
 if __name__ == '__main__':
     main()

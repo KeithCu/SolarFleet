@@ -4,54 +4,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime, timedelta
 import pandas as pd
 
-# Define vendor short codes
-VENDOR_CODES = {
-    "SolarEdge": "SE",
-    "Enphase": "EN",
-    "Sol-Ark": "SA",
-    "Sonnen": "SN",
-    "SMA": "SMA",
-}
-
-# Function to retrieve vendor code
-def get_vendor_code(vendor_name):
-    return VENDOR_CODES.get(vendor_name, "UNK")  # Default to 'UNK' for unknown vendors
+from SolarPlatform import Alert, Battery
 
 # Database setup using SQLAlchemy
 DATABASE_URL = "sqlite:///solar_alerts.db"
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
-
-# Define tables
-class Alert(Base):
-    __tablename__ = "alerts"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    inverter = Column(String, nullable=False)
-    alert_type = Column(String, nullable=False)
-    message = Column(String, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    resolved = Column(Boolean, default=False)
-    history = Column(String, default="")  # Track changes/updates
-
-# Battery schema to store last 3 data points
-class Battery(Base):
-    __tablename__ = "batteries"
-    serial_number = Column(String, primary_key=True)
-    model_number = Column(String, nullable=False)
-    site_id = Column(String, nullable=False)
-    site_name = Column(String, nullable=False)
-    state_of_energy_1 = Column(Float, nullable=True)
-    state_of_energy_2 = Column(Float, nullable=True)
-    state_of_energy_3 = Column(Float, nullable=True)
-    last_updated = Column(DateTime, default=datetime.utcnow)
-
-class Production(Base):
-    __tablename__ = "production"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    inverter = Column(String, nullable=False)
-    production_value = Column(Float, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
 
 def send_browser_notification(title, message):
     js_code = f"""
