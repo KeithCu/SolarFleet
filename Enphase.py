@@ -60,7 +60,7 @@ class EnphasePlatform(SolarPlatform):
             return []
 
     @staticmethod
-    def get_batteries_soc(system_id, access_token):
+    def get_batteries_soe(system_id, access_token):
         url = f"{ENPHASE_BASE_URL}/api/v4/systems/{system_id}/summary?key={ENPHASE_API_KEY}"
         headers = {"Authorization": f"Bearer {access_token}"}
         try:

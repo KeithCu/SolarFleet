@@ -27,7 +27,7 @@ class SolArkPlatform(SolarPlatform):
         return "SA"
 
     @staticmethod
-    def get_batteries_soc(driver, site):
+    def get_batteries_soe(driver, site):
         driver.get(url)
         time.sleep(5)  # Give time for JS to execute
         

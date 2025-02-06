@@ -1,4 +1,4 @@
-from SolarPlatform import SolarPlatform
+from SolarPlatform import SolarPlatform, disk_cache, CACHE_EXPIRATION_HOUR, CACHE_EXPIRATION_WEEK
 import requests
 from datetime import datetime, timedelta
 from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
@@ -11,18 +11,21 @@ SOLAREDGE_HEADERS = {
     "X-Account-Key": SOLAREDGE_V2_ACCOUNT_KEY
 }
 
+
 class SolarEdgePlatform(SolarPlatform):
     @classmethod
     def get_vendorcode(cls):
         return "SE"
 
     @classmethod
+    @disk_cache(CACHE_EXPIRATION_WEEK)
     def get_sites(cls):
         url = f'{SOLAREDGE_BASE_URL}/sites'
-        params = {"page": 1, "sites-in-page": 50}
+        params = {"page": 1, "sites-in-page": 500}
         all_sites = []
         
         while True:
+            cls.log("Fetching all sites from SolarEdge API...")
             response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
             response.raise_for_status()
             sites = response.json()
@@ -38,19 +41,24 @@ class SolarEdgePlatform(SolarPlatform):
             params["page"] += 1        
         return all_sites
 
+    #Save the battery data to a cache for 1 week.
     @classmethod
+    @disk_cache(CACHE_EXPIRATION_WEEK)
     def get_batteries(cls, site_id):
+
+        # Fetch data from API
         url = f'{SOLAREDGE_BASE_URL}/sites/{site_id}/devices'
         params = {"types": ["BATTERY"]}
         
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
-        
+
         batteries = [device for device in devices if device.get('type') == 'BATTERY']
         return batteries
-
+    
     @classmethod
+    @disk_cache(CACHE_EXPIRATION_HOUR)
     def get_battery_state_of_energy(cls, site_id, serial_number):
         end_time = datetime.utcnow()
         start_time = end_time - timedelta(minutes=15)
@@ -71,7 +79,7 @@ class SolarEdgePlatform(SolarPlatform):
         return latest_value
 
     @classmethod
-    def get_batteries_soc(cls, site_id):
+    def get_batteries_soe(cls, site_id):
         batteries = cls.get_batteries(site_id)
         battery_states = []
         

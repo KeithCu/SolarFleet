@@ -22,17 +22,14 @@ def send_browser_notification(title, message):
     """
     st.components.v1.html(f"<script>{js_code}</script>", height=0)
 
-def run_collection():
-    platform = SolarEdgePlatform()
-
+def collect_platform(platform):
     platform.log("Testing get_sites() API call...")
     try:
         sites = platform.get_sites()
         if sites:
-            platform.log("Retrieved Sites:")
             for site in sites:
                 site_id = site['siteId']
-                battery_data = platform.get_batteries_soc(site_id)
+                battery_data = platform.get_batteries_soe(site_id)
                 for battery in battery_data:                    
                     update_battery_data(platform.get_vendorcode(), site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'], "")
                     platform.log(f"Site {site_id} Battery Data: {battery_data}")
@@ -42,6 +39,11 @@ def run_collection():
     except Exception as e:
         platform.log(f"Error while fetching sites: {e}")
         return
+
+def run_collection():
+    platform = SolarEdgePlatform()
+    collect_platform(platform)
+
 
 # Streamlit UI
 st.set_page_config(page_title="Absolute Solar Monitoring", layout="wide")
