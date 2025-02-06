@@ -80,6 +80,8 @@ def update_battery_data(vendor_code, site_id, serial_number, model_number, state
 
 def fetch_alerts(active_only=True):
     session = SessionLocal()
+    return pd.DataFrame()
+
     query = session.query(Alert)
     if active_only:
         query = query.filter(Alert.resolved == False)
