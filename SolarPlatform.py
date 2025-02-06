@@ -48,8 +48,9 @@ import diskcache
 
 cache = diskcache.Cache("/tmp/")  # Persistent cache
 
-CACHE_EXPIRATION_WEEK = 7 * 24 * 60 * 60  # 1 week
-CACHE_EXPIRATION_HOUR = 3600
+CACHE_EXPIRE_HOUR = 3600
+CACHE_EXPIRE_DAY = CACHE_EXPIRE_HOUR * 24
+CACHE_EXPIRE_WEEK = CACHE_EXPIRE_DAY * 7
 
 def disk_cache(expiration_seconds):
     def decorator(func):
@@ -65,4 +66,3 @@ def disk_cache(expiration_seconds):
         
         return wrapper
     return decorator
-

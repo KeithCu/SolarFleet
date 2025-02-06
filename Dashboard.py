@@ -1,10 +1,14 @@
 import streamlit as st
 from datetime import datetime, timedelta
+import diskcache
 
 from FleetCollector import add_alert_if_not_exists, Alert, Battery, update_alert_history, \
 update_battery_data, init_fleet_db, fetch_alerts, update_battery_data, fetch_low_batteries, fetch_all_batteries
 
 from SolarEdge import SolarEdgePlatform
+
+CACHE_DIR = "/tmp/"  # Change this based on your setup
+
 
 def send_browser_notification(title, message):
     js_code = f"""
@@ -51,6 +55,31 @@ init_fleet_db()
 st.title("☀️ Absolute Solar Monitoring Dashboard ☀️")
 if st.button("Run Collection"):
     run_collection()
+
+if st.button("Show Cache Stats"):
+    cache = diskcache.Cache(CACHE_DIR)
+
+    stats = cache.stats()  # Get cache stats
+    keys = list(cache.iterkeys())  # List all cache keys
+    
+    st.write("### Cache Statistics")
+    st.json(stats)
+
+    st.write(f"### Cached Items: {len(keys)}")
+    
+    if keys:
+        st.write("### Cached Keys & Values")
+        for key in keys:
+            try:
+                value = cache.get(key)
+                st.write(f"**{key}** → {value}")
+            except Exception as e:
+                st.write(f"**{key}** → [Error fetching value] {e}")
+
+if st.button("Clear Cache"):
+    cache = diskcache.Cache(CACHE_DIR)
+    cache.clear()
+    st.success("Cache cleared successfully!")
 
 st.markdown("---")
 

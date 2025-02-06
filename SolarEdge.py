@@ -1,4 +1,4 @@
-from SolarPlatform import SolarPlatform, disk_cache, CACHE_EXPIRATION_HOUR, CACHE_EXPIRATION_WEEK
+from SolarPlatform import SolarPlatform, disk_cache, CACHE_EXPIRE_HOUR, CACHE_EXPIRE_WEEK, CACHE_EXPIRE_DAY
 import requests
 from datetime import datetime, timedelta
 from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
@@ -18,7 +18,7 @@ class SolarEdgePlatform(SolarPlatform):
         return "SE"
 
     @classmethod
-    @disk_cache(CACHE_EXPIRATION_WEEK)
+    @disk_cache(CACHE_EXPIRE_DAY)
     def get_sites(cls):
         url = f'{SOLAREDGE_BASE_URL}/sites'
         params = {"page": 1, "sites-in-page": 500}
@@ -41,9 +41,8 @@ class SolarEdgePlatform(SolarPlatform):
             params["page"] += 1        
         return all_sites
 
-    #Save the battery data to a cache for 1 week.
     @classmethod
-    @disk_cache(CACHE_EXPIRATION_WEEK)
+    @disk_cache(CACHE_EXPIRE_WEEK)
     def get_batteries(cls, site_id):
 
         # Fetch data from API
@@ -58,7 +57,7 @@ class SolarEdgePlatform(SolarPlatform):
         return batteries
     
     @classmethod
-    @disk_cache(CACHE_EXPIRATION_HOUR)
+    @disk_cache(CACHE_EXPIRE_HOUR)
     def get_battery_state_of_energy(cls, site_id, serial_number):
         end_time = datetime.utcnow()
         start_time = end_time - timedelta(minutes=15)
