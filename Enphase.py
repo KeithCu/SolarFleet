@@ -11,6 +11,11 @@ ENPHASE_BASE_URL = "https://api.enphaseenergy.com"
 TOKEN_FILE = "EnphaseTokens.json"
 
 class EnphasePlatform(SolarPlatform):
+
+    @classmethod
+    def get_vendorcode():
+        return "EN"
+
     @staticmethod
     def get_basic_auth_header(client_id, client_secret):
         credentials = f"{client_id}:{client_secret}"

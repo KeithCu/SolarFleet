@@ -1,16 +1,10 @@
 import streamlit as st
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean
-from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime, timedelta
-import pandas as pd
 
-from SolarPlatform import Alert, Battery
+from FleetCollector import add_alert_if_not_exists, Alert, Battery, update_alert_history, \
+update_battery_data, init_fleet_db, fetch_alerts, update_battery_data, fetch_low_batteries, fetch_all_batteries
 
-# Database setup using SQLAlchemy
-DATABASE_URL = "sqlite:///solar_alerts.db"
-Base = declarative_base()
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(bind=engine)
+from SolarEdge import SolarEdgePlatform
 
 def send_browser_notification(title, message):
     js_code = f"""
@@ -28,45 +22,35 @@ def send_browser_notification(title, message):
     """
     st.components.v1.html(f"<script>{js_code}</script>", height=0)
 
-# Initialize database
-def init_db():
-    Base.metadata.create_all(engine)
+def run_collection():
+    platform = SolarEdgePlatform()
 
-def fetch_alerts(active_only=True):
-    session = SessionLocal()
-    query = session.query(Alert)
-    if active_only:
-        query = query.filter(Alert.resolved == False)
-    alerts = pd.read_sql(query.statement, session.bind)
-    session.close()
-    return alerts
-
-def fetch_low_batteries():
-    session = SessionLocal()
-    query = session.query(Battery).filter(Battery.state_of_energy_1 < 10)
-    low_batteries = pd.read_sql(query.statement, session.bind)
-    session.close()
-    return low_batteries
-
-def fetch_all_batteries():
-    session = SessionLocal()
-    query = session.query(Battery).order_by(Battery.state_of_energy_1.asc())
-    all_batteries = pd.read_sql(query.statement, session.bind)
-    session.close()
-    return all_batteries
-
-def add_alert(inverter, alert_type, message):
-    session = SessionLocal()
-    new_alert = Alert(inverter=inverter, alert_type=alert_type, message=message)
-    session.add(new_alert)
-    session.commit()
-    session.close()
+    platform.log("Testing get_sites() API call...")
+    try:
+        sites = platform.get_sites()
+        if sites:
+            platform.log("Retrieved Sites:")
+            for site in sites:
+                site_id = site['siteId']
+                battery_data = platform.get_batteries_soc(site_id)
+                for battery in battery_data:                    
+                    update_battery_data(platform.get_vendorcode(), site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'], "")
+                    platform.log(f"Site {site_id} Battery Data: {battery_data}")
+        else:
+            platform.log("No sites found.")
+            return  # Nothing to test if no sites are found.
+    except Exception as e:
+        platform.log(f"Error while fetching sites: {e}")
+        return
 
 # Streamlit UI
 st.set_page_config(page_title="Absolute Solar Monitoring", layout="wide")
+init_fleet_db()
 st.title("☀️ Absolute Solar Monitoring Dashboard ☀️")
+if st.button("Run Collection"):
+    run_collection()
+
 st.markdown("---")
-init_db()
 
 col1, col2 = st.columns(2)
 
@@ -78,6 +62,32 @@ with col1:
     else:
         st.success("No active alerts.")
     
+    st.header("📝 Update Alert History")
+    st.markdown("Append a new entry to an alert's history log.")
+    
+    # Use a form for better UX and to group inputs together
+    with st.form("update_history_form", clear_on_submit=True):
+        vendor_code = st.text_input("Vendor Code (3 characters)")
+        system_id   = st.text_input("System ID")
+        new_entry   = st.text_area("New History Entry")
+        
+        submit = st.form_submit_button("Update History")
+        
+        if submit:
+            # Simple validation: ensure all fields are provided
+            if not vendor_code or not system_id or not new_entry.strip():
+                st.error("Please fill in all fields.")
+            else:
+                # Call your update function (make sure it appends a timestamp inside the function or here)
+                timestamp_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+                entry_with_timestamp = f"[{timestamp_str}] {new_entry.strip()}"
+                
+                success = update_alert_history(vendor_code, system_id, entry_with_timestamp)
+                if success:
+                    st.success("Alert history updated successfully!")
+                else:
+                    st.error("Failed to update alert history. Please verify the alert exists.")
+
     with st.expander("Add New Alert"):
         inverter = st.text_input("Inverter ID")
         alert_type = st.text_input("Alert Type")

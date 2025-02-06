@@ -22,7 +22,12 @@ class SolArkPlatform(SolarPlatform):
     def __init__(self):
         pass
     
-    def get_batteries_soc(self, driver, site):
+    @classmethod
+    def get_vendorcode():
+        return "SA"
+
+    @staticmethod
+    def get_batteries_soc(driver, site):
         driver.get(url)
         time.sleep(5)  # Give time for JS to execute
         
@@ -35,6 +40,7 @@ class SolArkPlatform(SolarPlatform):
         else:
             return None
 
+    @staticmethod
     def get_sites(driver):
         driver.get(SOLARK_SITES_URL)
         time.sleep(5)  # Give time for JS to execute
@@ -52,6 +58,7 @@ class SolArkPlatform(SolarPlatform):
         
         return sites
 
+    @staticmethod
     def solark_login(driver, login_url, user_email, user_password):
         wait = WebDriverWait(driver, 20)
         

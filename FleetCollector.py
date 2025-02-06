@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 import sys
 import time
 import requests
-from sqlalchemy import create_engine, Column, String, Float, DateTime, Integer, Float, Boolean
+import pandas as pd
+from sqlalchemy import PrimaryKeyConstraint, create_engine, Column, String, Float, DateTime, Integer, Float, Boolean
 
 from sqlalchemy.orm import sessionmaker, declarative_base
 from webdriver_manager.chrome import ChromeDriverManager
@@ -14,10 +15,102 @@ Base = declarative_base()
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 
-from SolarPlatform import Battery, Alert
+# Define tables
+class Alert(Base):
+    __tablename__ = "alerts"
+    vendor_code = Column(String(3), nullable=False)
+    site_id = Column(String, nullable=False)
+    
+    alert_type = Column(String, nullable=False)
+    message    = Column(String, nullable=False)
+
+    site_url   = Column(String, nullable=False)
+    timestamp  = Column(DateTime, default=datetime.utcnow)
+    resolved   = Column(DateTime, nullable=True)
+    history    = Column(String, default="")  # Track changes/updates
+
+    __table_args__ = (
+        PrimaryKeyConstraint('vendor_code', 'site_id'),
+    )
+
+class Battery(Base):
+    __tablename__ = "batteries"
+    vendor_code = Column(String(3), nullable=False)
+    site_id = Column(String, nullable=False)
+    serial_number = Column(String, nullable=False)
+
+    model_number = Column(String, nullable=False)
+    state_of_energy = Column(Float, nullable=True)
+
+    site_url   = Column(String, nullable=False)
+    last_updated = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        PrimaryKeyConstraint('vendor_code', 'site_id', 'serial_number'),
+    )
+
+# Battery Data Update Function
+def update_battery_data(vendor_code, site_id, serial_number, model_number, state_of_energy, site_url):
+    session = SessionLocal()
+    
+    existing_battery = session.query(Battery).filter(
+        Battery.vendor_code == vendor_code,
+        Battery.site_id == site_id,
+        Battery.serial_number == serial_number
+    ).first()
+    
+    if existing_battery:
+        existing_battery.state_of_energy = state_of_energy
+        existing_battery.last_updated = datetime.utcnow()
+    else:
+        new_battery = Battery(
+            vendor_code=vendor_code,
+            site_id=site_id,
+            serial_number=serial_number,
+            model_number=model_number,
+            state_of_energy=state_of_energy,
+            site_url=site_url,
+            last_updated=datetime.utcnow()
+        )
+        session.add(new_battery)
+    
+    session.commit()
+    session.close()
+
+
+def fetch_alerts(active_only=True):
+    session = SessionLocal()
+    query = session.query(Alert)
+    if active_only:
+        query = query.filter(Alert.resolved == False)
+    alerts = pd.read_sql(query.statement, session.bind)
+    session.close()
+    return alerts
+
+def fetch_low_batteries():
+    session = SessionLocal()
+    query = session.query(Battery).filter((Battery.state_of_energy < 0.10) | (Battery.state_of_energy.is_(None)))
+    low_batteries = pd.read_sql(query.statement, session.bind)
+    session.close()
+    return low_batteries
+
+def fetch_all_batteries():
+    session = SessionLocal()
+    query = session.query(Battery).order_by(Battery.state_of_energy.asc())
+    all_batteries = pd.read_sql(query.statement, session.bind)
+    session.close()
+    return all_batteries
+
+def add_alert(inverter, alert_type, message):
+    session = SessionLocal()
+    new_alert = Alert(inverter=inverter, alert_type=alert_type, message=message)
+    session.add(new_alert)
+    session.commit()
+    session.close()
+
 
 # Initialize database
-def init_db():
+def init_fleet_db():
     Base.metadata.create_all(engine)
 
 def is_data_recent():
@@ -25,75 +118,52 @@ def is_data_recent():
     session = SessionLocal()
     recent_battery = session.query(Battery).order_by(Battery.last_updated.desc()).first()
     session.close()
-    return recent_battery and (datetime.utcnow() - recent_battery.last_updated) < timedelta(days=1)
 
+def update_alert_history(vendor_code, system_id, alert_type, message):
+    pass
 
-def add_alert_if_not_exists(inverter, alert_type, message):
-    """Add an alert to the database if it doesn't already exist as an open alert."""
-    session = SessionLocal()
-    existing_alert = session.query(Alert).filter(
-        Alert.inverter == inverter,
-        Alert.alert_type == alert_type,
-        Alert.message == message,
-        Alert.resolved == False
-    ).first()
-    
-    if not existing_alert:
-        new_alert = Alert(
-            inverter=inverter,
-            alert_type=alert_type,
-            message=message,
-            timestamp=datetime.utcnow(),
-            resolved=False,
-            history=""
-        )
-        session.add(new_alert)
-        session.commit()
-    session.close()
+def add_alert_if_not_exists(vendor_code, system_id, message, alert_type, site_url):
+    # Use a context manager to ensure the session is closed properly
+    with SessionLocal() as session:
+        # Query for an existing alert that is unresolved (resolved is NULL)
+        existing_alert = session.query(Alert).filter(
+            Alert.vendor_code == vendor_code,
+            Alert.system_id == system_id,
+            Alert.alert_type == alert_type,
+            Alert.message == message,
+            Alert.resolved.is_(None)  # Check for unresolved alerts (i.e., NULL)
+        ).first()
 
-
-# Battery Data Update Function
-def update_battery_data(site_id, site_name, batteries):
-    """Update the battery data, maintaining only the last 3 records."""
-    session = SessionLocal()
-    for battery in batteries:
-        serial_number = battery['serialNumber']
-        model_number = battery['modelNumber']
-        soe = battery.get('stateOfEnergy')
-        
-        existing_battery = session.query(Battery).filter(Battery.serial_number == serial_number).first()
-        if existing_battery:
-            existing_battery.state_of_energy_3 = existing_battery.state_of_energy_2
-            existing_battery.state_of_energy_2 = existing_battery.state_of_energy_1
-            existing_battery.state_of_energy_1 = soe
-            existing_battery.last_updated = datetime.utcnow()
-        else:
-            new_battery = Battery(
-                serial_number=serial_number,
-                model_number=model_number,
-                site_id=site_id,
-                site_name=site_name,
-                state_of_energy_1=soe,
-                state_of_energy_2=None,
-                state_of_energy_3=None,
-                last_updated=datetime.utcnow()
+        if not existing_alert:
+            now = datetime.utcnow()
+            history_message = (f"Alert created at {now.isoformat()} UTC; "
+                               f"Type: '{alert_type}'; Message: '{message}'.")
+            
+            new_alert = Alert(
+                vendor_code=vendor_code,
+                system_id=system_id,
+                alert_type=alert_type,
+                message=message,
+                site_url=site_url,  # Assuming inverter has a site_url attribute
+                timestamp=datetime.utcnow(),
+                resolved=None,  # No resolution date means it's unresolved
+                history=history_message,
             )
-            session.add(new_battery)
-    session.commit()
-    session.close()
+            session.add(new_alert)
+            session.commit()
+
 
 from SolarEdge import SolarEdgePlatform
 
-def main():
-    init_db()
+def collect_all():
 
-    platform = SolarEdgePlatform()
+#    platform = SolarEdgePlatform()
 
     if False and is_data_recent():
         print("Skipping updates as data is recent enough.")
         return
 
-    sites = platform.get_sites()
+    # sites = platform.get_sites()
 
     # # Loop over each site to test the battery SoC retrieval robustly.
     # print("\nTesting get_batteries_soc() API call for each site:")
@@ -116,20 +186,6 @@ def main():
     #     except Exception as e:
     #         print(f"  Error fetching battery data for site {site_id}: {e}")
 
-    # Fetch SolarEdge alerts
-    print("\nFetching alerts and other info for each site:")
-    for site in sites:
-        site_id = site['id']
-        print(f"\nSite ID: {site_id} - {site['name']}")
-        try:
-            alerts = platform.get_alerts(site_id)
-            for alert in alerts:
-                if alert > 0:
-                    add_alert_if_not_exists("SolarEdge", site_id, alert)
-            else:
-                print("No alerts found for this site.")
-        except Exception as e:
-            print(f"Error while fetching alerts for site {site_id}: {e}")
 
 if __name__ == '__main__':
-    main()
+    collect_all()
