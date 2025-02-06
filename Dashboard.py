@@ -76,11 +76,6 @@ if st.button("Show Cache Stats"):
             except Exception as e:
                 st.write(f"**{key}** → [Error fetching value] {e}")
 
-if st.button("Clear Cache"):
-    cache = diskcache.Cache(CACHE_DIR)
-    cache.clear()
-    st.success("Cache cleared successfully!")
-
 st.markdown("---")
 
 col1, col2 = st.columns(2)
