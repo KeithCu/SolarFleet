@@ -1,7 +1,9 @@
-from SolarPlatform import SolarPlatform, disk_cache, CACHE_EXPIRE_HOUR, CACHE_EXPIRE_WEEK, CACHE_EXPIRE_DAY
 import requests
+from typing import List
 from datetime import datetime, timedelta
 from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
+
+import SolarPlatform
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
 
@@ -11,18 +13,17 @@ SOLAREDGE_HEADERS = {
     "X-Account-Key": SOLAREDGE_V2_ACCOUNT_KEY
 }
 
-
-class SolarEdgePlatform(SolarPlatform):
+class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     @classmethod
     def get_vendorcode(cls):
         return "SE"
 
     @classmethod
-    @disk_cache(CACHE_EXPIRE_DAY)
-    def get_sites(cls):
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
+    def get_sites_map(cls):
         url = f'{SOLAREDGE_BASE_URL}/sites'
         params = {"page": 1, "sites-in-page": 500}
-        all_sites = []
+        sites_dict = {}
         
         while True:
             cls.log("Fetching all sites from SolarEdge API...")
@@ -31,21 +32,20 @@ class SolarEdgePlatform(SolarPlatform):
             sites = response.json()
             
             for site in sites:
-                all_sites.append({
-                    'siteId': site.get('siteId'),
+                siteId = site.get('siteId')
+                sites_dict[siteId] = {
+                    'siteId': siteId,
                     'name': site.get('name'),
-                })
-            
+                }
+                
             if len(sites) < params["sites-in-page"]:
                 break
             params["page"] += 1        
-        return all_sites
+        return sites_dict
 
     @classmethod
-    @disk_cache(CACHE_EXPIRE_WEEK)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_MONTH)
     def get_batteries(cls, site_id):
-
-        # Fetch data from API
         url = f'{SOLAREDGE_BASE_URL}/sites/{site_id}/devices'
         params = {"types": ["BATTERY"]}
         
@@ -57,7 +57,7 @@ class SolarEdgePlatform(SolarPlatform):
         return batteries
     
     @classmethod
-    @disk_cache(CACHE_EXPIRE_HOUR)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
     def get_battery_state_of_energy(cls, site_id, serial_number):
         end_time = datetime.utcnow()
         start_time = end_time - timedelta(minutes=15)
@@ -95,15 +95,24 @@ class SolarEdgePlatform(SolarPlatform):
         return battery_states
 
     @classmethod
-    def get_alerts(cls, site_id):
-        #site_id = '1868399'
-        url = f'{SOLAREDGE_BASE_URL}/site/{site_id}/alerts'
-        
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
+    def get_alerts(cls) -> List[SolarPlatform.SolarPlatform.SolarAlert]:
+        url = f'{SOLAREDGE_BASE_URL}/alerts'
+        sites_dict = cls.get_sites_map()
+        all_alerts = []
+
         try:
             response = requests.get(url, headers=SOLAREDGE_HEADERS)
             response.raise_for_status()
-            alerts = response.json().get('alerts', [])
-            return alerts if alerts else []
+            alerts = response.json()
+            for alert in alerts:
+                a_site_id = alert.get('siteId')
+                site_url = ''
+                alert_details = ''
+                solarAlert = SolarPlatform.SolarPlatform.SolarAlert(a_site_id, sites_dict[a_site_id]['name'], site_url, alert.get('type'), alert.get('impact'), alert_details, alert.get('firstTriggered'))
+                all_alerts.append(solarAlert)
+
+            return all_alerts
         except requests.exceptions.RequestException as e:
             print(f"Failed to retrieve SolarEdge alerts: {e}")
             return []
@@ -111,15 +120,15 @@ class SolarEdgePlatform(SolarPlatform):
 def main():
     platform = SolarEdgePlatform()
 
-    platform.log("Testing get_sites() API call...")
+    platform.log("Testing get_sites_map() API call...")
     try:
-        sites = platform.get_sites()
+        sites = platform.get_sites_map()
         if sites:
             platform.log("Retrieved Sites:")
-            for site in sites:
-                site_id = site['siteId']
-                battery_data = platform.get_batteries_soc(site_id)
-                platform.log(f"Site {site_id} Battery Data: {battery_data}")
+            for site_id in sites.keys():
+                pass
+                #battery_data = platform.get_batteries_soe(site_id)
+                #platform.log(f"Site {site_id} Battery Data: {battery_data}")
         else:
             platform.log("No sites found.")
             return  # Nothing to test if no sites are found.
@@ -128,20 +137,52 @@ def main():
         return
 
     #Fetch all SolarEdge alerts
-    platform.log("\nFetching alerts and other info for each site:")
-    for site in sites:
-        site_id = site['id']
-        platform.log(f"\nSite ID: {site_id} - {site['name']}")
-        try:
-            alerts = platform.get_alerts(site_id)
-            if alerts is not None:
-                for alert in alerts:
-                    platform.log("Retrieved Alerts:")
-                    platform.log(f"  Alert ID: {alert}")
-            else:
-                platform.log("No alerts found for this site.")
-        except Exception as e:
-            platform.log(f"Error while fetching alerts for site {site_id}: {e}")
+    platform.log("\nFetching alerts for all sites")
+    try:
+        alerts = platform.get_alerts()
+        if alerts is not None:
+            for alert in alerts:
+                platform.log("Retrieved Alerts:")
+                platform.log(f"  Alert ID: {alert}")
+        else:
+            platform.log("No alerts found for this site.")
+    except Exception as e:
+        platform.log(f"Error while fetching alerts for site {site_id}: {e}")
 
-# if __name__ == "__main__":
-#     main()
+
+    # # Vendor data using different naming conventions:
+    # vendor_data = {
+    #     "site_id": 123,
+    #     "name": "Example Site",
+    #     "url": "http://example.com"
+    # }
+
+    # # Define a mapping: vendor key -> dataclass field name
+    # key_mapping = {
+    #     "site_id": "siteId",
+    #     # add more mappings here as needed
+    # }
+
+    # def map_vendor_keys(data: dict, mapping: dict) -> dict:
+    #     """
+    #     Transforms keys in the vendor dictionary according to the provided mapping.
+    #     Any key not found in the mapping will be kept as-is.
+    #     """
+    #     return {mapping.get(key, key): value for key, value in data.items()}
+
+    # # Transform the vendor dictionary:
+    # converted_data = map_vendor_keys(vendor_data, key_mapping)
+
+    # # Optionally, you can filter out any keys that are not part of SiteInfo:
+    # def filter_fields(cls, data: dict) -> dict:
+    #     field_names = {f.name for f in fields(cls)}
+    #     return {k: v for k, v in data.items() if k in field_names}
+
+    # filtered_data = filter_fields(SiteInfo, converted_data)
+
+    # # Create the dataclass instance using the filtered and mapped dictionary:
+    # site_info = SiteInfo(**filtered_data)
+
+
+if __name__ == "__main__":
+    main()

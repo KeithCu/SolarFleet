@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
+from typing import List
 import sys
 import time
 import requests
@@ -9,29 +10,68 @@ from sqlalchemy import PrimaryKeyConstraint, create_engine, Column, String, Floa
 from sqlalchemy.orm import sessionmaker, declarative_base
 from webdriver_manager.chrome import ChromeDriverManager
 
+import SolarPlatform
+
 # Database setup using SQLAlchemy
 DATABASE_URL = "sqlite:///solar_alerts.db"
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 
+#
 # Define tables
+# This is a superset of SolarPlatform.SolarAlert
+
 class Alert(Base):
     __tablename__ = "alerts"
     vendor_code = Column(String(3), nullable=False)
     site_id = Column(String, nullable=False)
+    site_name = Column(String, nullable=False)
+    site_url   = Column(String, nullable=False)
     
     alert_type = Column(String, nullable=False)
-    message    = Column(String, nullable=False)
+    details    = Column(String, nullable=False)
+    severity   = Column(Integer, nullable=False)
 
-    site_url   = Column(String, nullable=False)
-    timestamp  = Column(DateTime, default=datetime.utcnow)
-    resolved   = Column(DateTime, nullable=True)
+    first_triggered  = Column(DateTime, default=datetime.utcnow)
+    resolved_date   = Column(DateTime, nullable=True)
     history    = Column(String, default="")  # Track changes/updates
 
     __table_args__ = (
-        PrimaryKeyConstraint('vendor_code', 'site_id'),
+        PrimaryKeyConstraint('vendor_code', 'site_id', 'alert_type'),
     )
+
+def add_alert_if_not_exists(vendor_code, site_id, site_name, site_url, alert_type, details, severity, first_triggered):
+    # Use a context manager to ensure the session is closed properly
+    with SessionLocal() as session:
+        # Query for an existing alert that is unresolved (resolved is NULL)
+        existing_alert = session.query(Alert).filter(
+            Alert.vendor_code == vendor_code,
+            Alert.site_id == site_id,
+            Alert.alert_type == alert_type,
+            Alert.resolved_date.is_(None)  # Check for unresolved alerts (i.e., NULL)
+        ).first()
+
+        if not existing_alert:
+            now = datetime.utcnow()
+            history_message = (f"Notes: ")
+            
+            new_alert = Alert(
+                vendor_code = vendor_code,
+                site_id = site_id,
+                site_name = site_name,
+                site_url = site_url,
+                alert_type = alert_type,
+                details = details,
+                severity = severity,
+                first_triggered = first_triggered,
+                resolved_date = None,  # No resolution date means it's unresolved
+                history = history_message,
+            )
+            session.add(new_alert)
+            session.commit()
+
+
 
 class Battery(Base):
     __tablename__ = "batteries"
@@ -80,11 +120,10 @@ def update_battery_data(vendor_code, site_id, serial_number, model_number, state
 
 def fetch_alerts(active_only=True):
     session = SessionLocal()
-    return pd.DataFrame()
 
-    query = session.query(Alert)
-    if active_only:
-        query = query.filter(Alert.resolved == False)
+    query = session.query(Alert).filter(Alert.alert_type != "SNOW_ON_SITE")
+    # if active_only:
+    #     query = query.filter(Alert.resolved == False)
     alerts = pd.read_sql(query.statement, session.bind)
     session.close()
     return alerts
@@ -124,38 +163,35 @@ def is_data_recent():
 def update_alert_history(vendor_code, system_id, alert_type, message):
     pass
 
-def add_alert_if_not_exists(vendor_code, system_id, message, alert_type, site_url):
-    # Use a context manager to ensure the session is closed properly
-    with SessionLocal() as session:
-        # Query for an existing alert that is unresolved (resolved is NULL)
-        existing_alert = session.query(Alert).filter(
-            Alert.vendor_code == vendor_code,
-            Alert.system_id == system_id,
-            Alert.alert_type == alert_type,
-            Alert.message == message,
-            Alert.resolved.is_(None)  # Check for unresolved alerts (i.e., NULL)
-        ).first()
-
-        if not existing_alert:
-            now = datetime.utcnow()
-            history_message = (f"Alert created at {now.isoformat()} UTC; "
-                               f"Type: '{alert_type}'; Message: '{message}'.")
-            
-            new_alert = Alert(
-                vendor_code=vendor_code,
-                system_id=system_id,
-                alert_type=alert_type,
-                message=message,
-                site_url=site_url,  # Assuming inverter has a site_url attribute
-                timestamp=datetime.utcnow(),
-                resolved=None,  # No resolution date means it's unresolved
-                history=history_message,
-            )
-            session.add(new_alert)
-            session.commit()
 
 
 from SolarEdge import SolarEdgePlatform
+
+
+def collect_platform(platform):
+    platform.log("Testing get_sites_map() API call...")
+    try:
+        sites = platform.get_sites_map()
+        for site_id in sites.keys():
+            battery_data = platform.get_batteries_soe(site_id)
+            for battery in battery_data:                    
+                update_battery_data(platform.get_vendorcode(), site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'], "")
+                platform.log(f"Site {site_id} Battery Data: {battery_data}")
+    except Exception as e:
+        platform.log(f"Error while fetching sites: {e}")
+        return
+    # all_alerts.append({'siteId': a_site_id, 'name': name, 'type': a_type, 'severity': severity,
+    #                    'firstTriggered': first_triggered})
+    try:
+        alerts: List[SolarPlatform.SolarAlert] = platform.get_alerts() 
+        for alert in alerts:
+            add_alert_if_not_exists(platform.get_vendorcode(), alert.site_id, alert.site_name, 
+                                    alert.site_url, alert.alert_type, alert.details, alert.severity, alert.first_triggered)
+
+    except Exception as e:
+        platform.log(f"Error while fetching alerts: {e}")
+        return
+
 
 def collect_all():
 
@@ -165,7 +201,7 @@ def collect_all():
         print("Skipping updates as data is recent enough.")
         return
 
-    # sites = platform.get_sites()
+    # sites = platform.get_sites_map()
 
     # # Loop over each site to test the battery SoC retrieval robustly.
     # print("\nTesting get_batteries_soc() API call for each site:")

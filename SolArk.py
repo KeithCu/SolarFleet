@@ -10,13 +10,26 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.core.os_manager import ChromeType
 
-from SolarPlatform import SolarPlatform
+import SolarPlatform
 
 SOLARK_BASE_URL = "https://www.solarkcloud.com"
 SOLARK_LOGIN_URL = SOLARK_BASE_URL + f"/login"
 SOLARK_SITES_URL = SOLARK_BASE_URL + f"/plants"
 
 from api_keys import SOLARK_EMAIL, SOLARK_PASSWORD
+
+g_driver = None
+
+def create_driver():
+    options = Options()
+    #options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    
+    service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+    driver = webdriver.Chrome(service=service, options=options)
+    return driver
+
 
 class SolArkPlatform(SolarPlatform):
     def __init__(self):
@@ -27,43 +40,11 @@ class SolArkPlatform(SolarPlatform):
         return "SA"
 
     @staticmethod
-    def get_batteries_soe(driver, site):
-        driver.get(url)
-        time.sleep(5)  # Give time for JS to execute
-        
-        # Extract the page source after JavaScript has been processed
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        soc_element = soup.find("div", {"class": "soc"})
-        
-        if soc_element:
-            return float(soc_element.text.strip().replace('%', ''))
-        else:
-            return None
-
-    @staticmethod
-    def get_sites(driver):
-        driver.get(SOLARK_SITES_URL)
-        time.sleep(5)  # Give time for JS to execute
-        
-        # Extract the page source after JavaScript has been processed
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        site_links = soup.find_all("a", href=True)
-        
-        sites = {}
-        for link in site_links:
-            if "/plants/overview/" in link["href"]:
-                site_id = link["href"].split("/")[-2]
-                site_name = link.text.strip()
-                sites[site_id] = site_name
-        
-        return sites
-
-    @staticmethod
-    def solark_login(driver, login_url, user_email, user_password):
-        wait = WebDriverWait(driver, 20)
+    def solark_login(login_url, user_email, user_password):
+        wait = WebDriverWait(g_driver, 10)
         
         # Open the login page.
-        driver.get(login_url)
+        g_driver.get(login_url)
         
         # Locate the email input using its placeholder text.
         email_field = wait.until(
@@ -101,32 +82,62 @@ class SolArkPlatform(SolarPlatform):
         time.sleep(3)
         
         # Return cookies from the session.
-        return driver.get_cookies()
+        return g_driver.get_cookies()
 
-def create_driver():
-    options = Options()
-    #options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    
-    service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
-    driver = webdriver.Chrome(service=service, options=options)
-    return driver
+    @staticmethod
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
+    def get_batteries_soe(driver, site):
+        if g_driver is None:
+            g_driver = create_driver()
+            SolArkPlatform.solark_login(SOLARK_LOGIN_URL, SOLARK_EMAIL, SOLARK_PASSWORD)
+
+        g_driver.get(url)
+        time.sleep(5)  # Give time for JS to execute
+        
+        # Extract the page source after JavaScript has been processed
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        soc_element = soup.find("div", {"class": "soc"})
+        
+        if soc_element:
+            return float(soc_element.text.strip().replace('%', ''))
+        else:
+            return None
+
+    @staticmethod
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_DAY)
+    def get_sites_map():
+        if g_driver is None:
+            g_driver = create_driver()
+            SolArkPlatform.solark_login(SOLARK_LOGIN_URL, SOLARK_EMAIL, SOLARK_PASSWORD)
+
+        g_driver.get(SOLARK_SITES_URL)
+        time.sleep(5)  # Give time for JS to execute
+        
+        # Extract the page source after JavaScript has been processed
+        soup = BeautifulSoup(g_driver.page_source, "html.parser")
+        site_links = soup.find_all("a", href=True)
+        
+        sites = {}
+        for link in site_links:
+            if "/plants/overview/" in link["href"]:
+                site_id = link["href"].split("/")[-2]
+                site_name = link.text.strip()
+                sites[site_id] = site_name
+        
+        return sites
+
 
 # Example usage:
 if __name__ == "__main__":
-
-    driver = create_driver()
     platform = SolArkPlatform()
 
     try:
-        platform.login(driver, SOLARK_LOGIN_URL, SOLARK_EMAIL, SOLARK_PASSWORD)
-        sites = platform.get_sites(driver)
+        sites = platform.get_sites_map()
 
         for site in sites.keys():
-            soc = platform.get_batteries_soc(driver, site)
-            platform.log(f"Site: {sites[site]}, SOC: {soc}%")
+            soe = platform.get_batteries_soe(site)
+            platform.log(f"Site: {sites[site]}, SOC: {soe}%")
 
     finally:
-        driver.quit()
+        g_driver.quit()
 
