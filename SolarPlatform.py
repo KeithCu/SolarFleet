@@ -33,7 +33,7 @@ class SolarAlert:
     site_id: str
     site_name: str
     site_url: str
-    alert_type: AlertType
+    alert_type: str
     severity: int  # severity in percentage (0-100% production down)
     details: str
     first_triggered: str
@@ -61,14 +61,14 @@ class SolarPlatform(ABC):
 
     @classmethod
     @abstractmethod
-    #Returns a map of siteid (string) SiteInfo objects
+    #Returns a map of siteid to SiteInfo objects
     def get_sites_map(cls) -> Dict[str, SiteInfo]:
         pass
 
     @classmethod
     @abstractmethod
     #returns production in KW at a particular time
-    def get_production(cls, site_id, time) -> float:
+    def get_production(cls, site_id, reference_time) -> List[float]:
         pass
 
     @classmethod

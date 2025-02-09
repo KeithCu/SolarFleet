@@ -1,5 +1,5 @@
 import requests
-from typing import List
+from typing import List, Dict
 from datetime import datetime, timedelta
 from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
 
@@ -40,17 +40,15 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return all_sites
 
     @classmethod
-    def get_sites_map(cls):
+    def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         sites = cls.get_sites_list()
 
         sites_dict = {}
-                    
+
         for site in sites:
-            siteId = site.get('siteId')
-            sites_dict[siteId] = {
-                'siteId': siteId,
-                'name': site.get('name'),
-            }
+            site_id = site.get('siteId')
+            site_info = SolarPlatform.SiteInfo(site.get('siteId'), site.get('name'), '', site['location']['zip'], [])
+            sites_dict[site_id] = site_info
                 
         return sites_dict
 
@@ -69,13 +67,14 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
-    def get_production(cls, site_id, start_time):
-        end_time = start_time + timedelta(minutes=15)
+    def get_production(cls, site_id, reference_time):
+        end_time = reference_time + timedelta(minutes=15)
 
-        url = SOLAREDGE_BASE_URL + f'/sites/{id}/inverters/{serialNumber}/power'    
+        #todo fix me to get the serial numbers to do this properly
+        url = SOLAREDGE_BASE_URL + f'/sites/{site_id}/inverters/{serialNumber}/power'    
         #url = f'{}/sites/{site_id}/storage/{serial_number}/state-of-energy'
         params = {
-            'from': start_time.isoformat() + 'Z',
+            'from': reference_time.isoformat() + 'Z',
             'to': end_time.isoformat() + 'Z',
             'resolution': 'QUARTER_HOUR',
             'unit': 'PERCENTAGE'
@@ -142,7 +141,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                 a_site_id = alert.get('siteId')
                 site_url = ''
                 alert_details = ''
-                solarAlert = SolarPlatform.SolarAlert(a_site_id, sites_dict[a_site_id]['name'], site_url, alert.get('type'), alert.get('impact'), alert_details, alert.get('firstTriggered'))
+                solarAlert = SolarPlatform.SolarAlert(a_site_id, sites_dict[a_site_id].name, site_url, alert.get('type'), alert.get('impact'), alert_details, alert.get('firstTriggered'))
                 all_alerts.append(solarAlert)
 
             return all_alerts

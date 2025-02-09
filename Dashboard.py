@@ -1,7 +1,8 @@
 import streamlit as st
 from datetime import datetime, timedelta
 import pandas as pd
-
+import numpy as np
+import plotly.express as px
 from FleetCollector import add_alert_if_not_exists, Alert, Battery, update_alert_history, \
 update_battery_data, init_fleet_db, fetch_alerts, update_battery_data, fetch_low_batteries, fetch_all_batteries, collect_platform
 
@@ -104,6 +105,44 @@ with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
     else:
         st.success("No battery data available.")
 
+
+# Generate data for 250 sites
+num_sites = 250
+sites = [f"Site {i+1}" for i in range(num_sites)]
+# Create random production data between 10 and 150 kW for noon production
+production_values = np.random.randint(10, 150, size=num_sites)
+
+# Create a DataFrame with the data and sort for a cleaner look
+df = pd.DataFrame({
+    "Site": sites,
+    "Noon Production (kW)": production_values
+}).sort_values("Noon Production (kW)", ascending=True)
+
+# Streamlit dashboard header
+st.title("Extended Vertical Bar Chart for 250 Sites")
+st.markdown("""
+This dashboard displays a horizontal bar chart with extended vertical space so that all 250 site names are clearly visible.
+""")
+
+# Create a horizontal bar chart using Plotly Express
+fig = px.bar(
+    df,
+    x="Noon Production (kW)",
+    y="Site",
+    orientation='h',  # Horizontal bars so that site names are on the y-axis
+    title="Noon Production per Site",
+    labels={"Noon Production (kW)": "Production (kW)", "Site": "Site Name"}
+)
+
+# Adjust the layout to be tall enough for all site names.
+# For example, allocate roughly 20 pixels per site.
+fig.update_layout(
+    height=num_sites * 20,
+    margin=dict(l=150, r=50, t=50, b=50)
+)
+
+# Display the chart in Streamlit
+st.plotly_chart(fig, use_container_width=True)
 
     # st.header("📝 Update Alert History")
     # st.markdown("Append a new entry to an alert's history log.")

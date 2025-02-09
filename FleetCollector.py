@@ -6,6 +6,7 @@ import math
 import time
 import requests
 import pandas as pd
+from sklearn.neighbors import BallTree
 from sqlalchemy import PrimaryKeyConstraint, create_engine, Column, String, Float, DateTime, Integer, Float, Boolean
 
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -129,7 +130,7 @@ def get_coordinates(zip_code):
 #      site_id, and distance (in miles). These values are stored in the new record.
 
 def process_bulk_solar_production(
-    production_data: list[SolarProduction], 
+    production_data: list[SolarPlatform.SolarProduction], 
     recalibrate: bool = False, 
     sunny_threshold: float = 100.0
 ):
@@ -351,6 +352,7 @@ from SolarEdge import SolarEdgePlatform
 
 
 def collect_platform(platform):
+    sites = None
     platform.log("Testing get_sites_map() API call...")
     try:
         sites = platform.get_sites_map()
@@ -366,7 +368,7 @@ def collect_platform(platform):
         alerts = platform.get_alerts() 
         for alert in alerts:
             add_alert_if_not_exists(platform.get_vendorcode(), alert.site_id, alert.site_name, 
-                                    alert.site_url, alert.alert_type, alert.details, alert.severity, alert.first_triggered)
+                                    alert.site_url, str(alert.alert_type), alert.details, alert.severity, alert.first_triggered)
 
     except Exception as e:
         platform.log(f"Error while fetching alerts: {e}")
