@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from typing import List
 import sys
+import math
 import time
 import requests
 import pandas as pd
@@ -9,6 +10,9 @@ from sqlalchemy import PrimaryKeyConstraint, create_engine, Column, String, Floa
 
 from sqlalchemy.orm import sessionmaker, declarative_base
 from webdriver_manager.chrome import ChromeDriverManager
+
+import pgeocode
+nomi = pgeocode.Nominatim('us')
 
 import SolarPlatform
 
@@ -72,6 +76,184 @@ def add_alert_if_not_exists(vendor_code, site_id, site_name, site_url, alert_typ
             session.commit()
 
 
+class Production(Base):
+    __tablename__ = "production"
+    vendor_code = Column(String(3), nullable=False)
+    site_id = Column(String, nullable=False)
+    zip_code = Column(String, nullable=False)
+
+    nearest_vendor_code = Column(String(3), nullable=False)
+    nearest_site_id = Column(String, nullable=False)
+    nearest_distance = Column(String, nullable=False)
+
+    noon_production = Column(Float, nullable=True)
+    site_url   = Column(String, nullable=False)
+    last_updated = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        PrimaryKeyConstraint('vendor_code', 'site_id', ),
+    )
+
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    return c * 3958.8  # Earth radius in miles
+
+def get_coordinates(zip_code):
+    result = nomi.query_postal_code(zip_code)
+    if result is None or math.isnan(result.latitude):
+        return None, None
+    return result.latitude, result.longitude
+
+# Bulk process a list of SolarProduction data. 
+
+# Parameters:
+#   - production_data: list of SolarProduction records.
+#   - recalibrate: if True, override sanity checks (used when calibrating on a known sunny day).
+#   - sunny_threshold: expected minimum average production on a sunny day.
+
+# Behavior:
+#   1. Computes the average production across all new records.
+#      - If the average is below sunny_threshold and recalibrate is False, the function
+#        refuses to update (to avoid cloudy-day corruption).
+#   2. For each record, it checks if an entry (by vendor_code and site_id) already exists:
+#      - If so, it updates the production and timestamp.
+#      - Otherwise, it adds it as a new entry.
+#   3. For new entries, it builds a combined dataset (existing + new) and uses a BallTree
+#      (with the haversine metric) to compute for each new site the nearest neighbor’s vendor_code,
+#      site_id, and distance (in miles). These values are stored in the new record.
+
+def process_bulk_solar_production(
+    production_data: list[SolarProduction], 
+    recalibrate: bool = False, 
+    sunny_threshold: float = 100.0
+):
+
+    session = SessionLocal()
+
+    if not production_data:
+        print("No production data provided.")
+        return
+
+    # Compute average production for sanity check.
+    avg_prod = sum(prod.site_production for prod in production_data) / len(production_data)
+    if avg_prod < sunny_threshold and not recalibrate:
+        raise ValueError(
+            f"Average production ({avg_prod:.2f}) is below the sunny threshold ({sunny_threshold}). "
+            "Data rejected to prevent calibration on a cloudy day."
+        )
+    
+    # For these solar entries, use a default vendor_code (or derive it as needed).
+    default_vendor_code = "SOL"
+
+    # Convert SolarProduction objects to dictionaries suitable for our Production model.
+    new_records = []
+    for prod in production_data:
+        new_records.append({
+            "vendor_code": default_vendor_code,
+            "site_id": prod.site_id,
+            "zip_code": str(prod.site_zipcode),
+            "noon_production": prod.site_production,
+            "site_url": prod.site_url
+        })
+    
+    # Query existing Production entries.
+    existing_entries = session.query(Production).all()
+    existing_dict = {(rec.vendor_code, rec.site_id): rec for rec in existing_entries}
+    
+    # Build a combined dataset (existing + new) with computed coordinates.
+    combined = []
+    # Process existing records.
+    for rec in existing_entries:
+        lat, lon = get_coordinates(rec.zip_code)
+        if lat is None:
+            continue
+        combined.append({
+            "vendor_code": rec.vendor_code,
+            "site_id": rec.site_id,
+            "zip_code": rec.zip_code,
+            "lat": lat,
+            "lon": lon,
+            "noon_production": rec.noon_production,
+            "site_url": rec.site_url
+        })
+    
+    # Process new records.
+    new_to_insert = []
+    for rec in new_records:
+        key = (rec["vendor_code"], rec["site_id"])
+        if key in existing_dict:
+            # Update the existing record (avoid recalculation).
+            existing = existing_dict[key]
+            existing.noon_production = rec["noon_production"]
+            existing.last_updated = datetime.utcnow()
+            session.commit()
+            # Add to combined dataset.
+            lat, lon = get_coordinates(rec["zip_code"])
+            if lat is not None:
+                combined.append({
+                    "vendor_code": existing.vendor_code,
+                    "site_id": existing.site_id,
+                    "zip_code": existing.zip_code,
+                    "lat": lat,
+                    "lon": lon,
+                    "noon_production": existing.noon_production,
+                    "site_url": existing.site_url
+                })
+        else:
+            # New record: compute its coordinates.
+            lat, lon = get_coordinates(rec["zip_code"])
+            if lat is None:
+                continue
+            rec["lat"] = lat
+            rec["lon"] = lon
+            new_to_insert.append(rec)
+            combined.append(rec)
+    
+    # If there are new records, build a BallTree over the combined dataset.
+    if new_to_insert:
+        coords = np.array([[r["lat"], r["lon"]] for r in combined])
+        coords_rad = np.radians(coords)
+        tree = BallTree(coords_rad, metric='haversine')
+        keys = [(r["vendor_code"], r["site_id"]) for r in combined]
+        
+        # For each new record, compute the nearest neighbor.
+        for rec in new_to_insert:
+            new_key = (rec["vendor_code"], rec["site_id"])
+            query_point = np.radians(np.array([[rec["lat"], rec["lon"]]]))
+            dist_rad, ind = tree.query(query_point, k=2)
+            # If the closest neighbor is itself, take the second closest.
+            if keys[ind[0][0]] == new_key and len(ind[0]) > 1:
+                nearest_idx = ind[0][1]
+                distance_miles = dist_rad[0][1] * 3958.8
+            else:
+                nearest_idx = ind[0][0]
+                distance_miles = dist_rad[0][0] * 3958.8
+            rec["nearest_vendor_code"] = keys[nearest_idx][0]
+            rec["nearest_site_id"] = keys[nearest_idx][1]
+            rec["nearest_distance"] = int(round(distance_miles))
+    
+    # Bulk insert new records.
+    for rec in new_to_insert:
+        new_entry = Production(
+            vendor_code=rec["vendor_code"],
+            site_id=rec["site_id"],
+            zip_code=rec["zip_code"],
+            noon_production=rec["noon_production"],
+            site_url=rec["site_url"],
+            nearest_vendor_code=rec.get("nearest_vendor_code", rec["vendor_code"]),
+            nearest_site_id=rec.get("nearest_site_id", rec["site_id"]),
+            nearest_distance=rec.get("nearest_distance", 0),
+            last_updated=datetime.utcnow()
+        )
+        session.add(new_entry)
+    session.commit()
+    print(f"Processed {len(new_records)} records. Average production: {avg_prod:.2f}")
 
 class Battery(Base):
     __tablename__ = "batteries"
@@ -180,10 +362,8 @@ def collect_platform(platform):
     except Exception as e:
         platform.log(f"Error while fetching sites: {e}")
         return
-    # all_alerts.append({'siteId': a_site_id, 'name': name, 'type': a_type, 'severity': severity,
-    #                    'firstTriggered': first_triggered})
     try:
-        alerts: List[SolarPlatform.SolarAlert] = platform.get_alerts() 
+        alerts = platform.get_alerts() 
         for alert in alerts:
             add_alert_if_not_exists(platform.get_vendorcode(), alert.site_id, alert.site_name, 
                                     alert.site_url, alert.alert_type, alert.details, alert.severity, alert.first_triggered)

@@ -15,6 +15,7 @@ import SolarPlatform
 SOLARK_BASE_URL = "https://www.solarkcloud.com"
 SOLARK_LOGIN_URL = SOLARK_BASE_URL + f"/login"
 SOLARK_SITES_URL = SOLARK_BASE_URL + f"/plants"
+SOLARK_OVERVIEW_URL = SOLARK_SITES_URL + f"/overview"
 
 from api_keys import SOLARK_EMAIL, SOLARK_PASSWORD
 
@@ -30,28 +31,24 @@ def create_driver():
     driver = webdriver.Chrome(service=service, options=options)
     return driver
 
-
 class SolArkPlatform(SolarPlatform):
-    def __init__(self):
-        pass
-    
     @classmethod
-    def get_vendorcode():
+    def get_vendorcode(cls):
         return "SA"
 
-    @staticmethod
-    def solark_login(login_url, user_email, user_password):
+    @classmethod
+    def solark_login(cls):
         wait = WebDriverWait(g_driver, 10)
         
         # Open the login page.
-        g_driver.get(login_url)
+        g_driver.get(SOLARK_LOGIN_URL)
         
         # Locate the email input using its placeholder text.
         email_field = wait.until(
             EC.presence_of_element_located((By.XPATH, "//input[@placeholder='Please input your E-mail']"))
         )
         email_field.clear()
-        email_field.send_keys(user_email)
+        email_field.send_keys(SOLARK_EMAIL)
         
         # Locate the password field using its placeholder and name attributes.
         password_field = wait.until(
@@ -60,7 +57,7 @@ class SolArkPlatform(SolarPlatform):
             ))
         )
         password_field.clear()
-        password_field.send_keys(user_password)
+        password_field.send_keys(SOLARK_PASSWORD)
         
         # Locate and click the checkbox. (Assumes there is a single element matching this selector.)
         checkbox = wait.until(
@@ -76,7 +73,7 @@ class SolArkPlatform(SolarPlatform):
         login_button.click()
         
         # Wait until the URL changes (indicating a successful login).
-        wait.until(EC.url_changes(login_url))
+        wait.until(EC.url_changes(SOLARK_LOGIN_URL))
         
         # Optionally pause to ensure all JS processes complete.
         time.sleep(3)
@@ -84,18 +81,20 @@ class SolArkPlatform(SolarPlatform):
         # Return cookies from the session.
         return g_driver.get_cookies()
 
-    @staticmethod
+    @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
-    def get_batteries_soe(driver, site):
+    def get_batteries_soe(cls, site_id):
         if g_driver is None:
             g_driver = create_driver()
-            SolArkPlatform.solark_login(SOLARK_LOGIN_URL, SOLARK_EMAIL, SOLARK_PASSWORD)
+            SolArkPlatform.solark_login()
+
+        url = SOLARK_OVERVIEW_URL + f"/{site_id}/2"
 
         g_driver.get(url)
         time.sleep(5)  # Give time for JS to execute
         
         # Extract the page source after JavaScript has been processed
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        soup = BeautifulSoup(g_driver.page_source, "html.parser")
         soc_element = soup.find("div", {"class": "soc"})
         
         if soc_element:
@@ -103,12 +102,12 @@ class SolArkPlatform(SolarPlatform):
         else:
             return None
 
-    @staticmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_DAY)
-    def get_sites_map():
+    @classmethod
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
+    def get_sites_map(cls):
         if g_driver is None:
             g_driver = create_driver()
-            SolArkPlatform.solark_login(SOLARK_LOGIN_URL, SOLARK_EMAIL, SOLARK_PASSWORD)
+            SolArkPlatform.solark_login()
 
         g_driver.get(SOLARK_SITES_URL)
         time.sleep(5)  # Give time for JS to execute
@@ -139,5 +138,6 @@ if __name__ == "__main__":
             platform.log(f"Site: {sites[site]}, SOC: {soe}%")
 
     finally:
-        g_driver.quit()
+        if g_driver:
+            g_driver.quit()
 

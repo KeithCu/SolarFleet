@@ -6,6 +6,21 @@ import pprint
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Optional
+import random
+
+@dataclass
+class SiteInfo:
+    site_id: str
+    name: str
+    url: str
+    zipcode: str
+    inverters: List[str]
+
+@dataclass
+class BatteryInfo:
+    serial_number: str
+    model_name: str
+    state_of_energy: str
 
 class AlertType:
     NO_COMMUNICATION = "NO_COMMUNICATION"
@@ -13,21 +28,36 @@ class AlertType:
     HARDWARE_ERROR = "HARDWARE_ERROR"
     MLPE_ERROR = "MLPE_ERROR"
 
-#Shared classes and methods
+@dataclass
+class SolarAlert:
+    site_id: str
+    site_name: str
+    site_url: str
+    alert_type: AlertType
+    severity: int  # severity in percentage (0-100% production down)
+    details: str
+    first_triggered: str
+
+    def __post_init__(self):
+        if not (0 <= self.severity <= 100):
+            raise ValueError("Severity must be between 0 and 100.")
+
+@dataclass
+class SolarProduction:
+    site_id: str
+    site_name: str
+    site_zipcode: int
+    site_production: float
+    site_url: str
+
 class SolarPlatform(ABC):
 #    log_container = st.empty()  # A Streamlit container to display log messages
     log_text = ""  # A string to store cumulative log messages
 
     @classmethod
     @abstractmethod
-    def get_vendorcode():
+    def get_vendorcode(cls):
         pass
-
-    @dataclass
-    class SiteInfo:
-        site_id: str
-        site_name: str
-        site_url: str
 
     @classmethod
     @abstractmethod
@@ -35,31 +65,17 @@ class SolarPlatform(ABC):
     def get_sites_map(cls) -> Dict[str, SiteInfo]:
         pass
 
-    @dataclass
-    class BatteryInfo:
-        serial_number : str
-        model_name : str
-        state_of_energy : str
+    @classmethod
+    @abstractmethod
+    #returns production in KW at a particular time
+    def get_production(cls, site_id, time) -> float:
+        pass
 
     @classmethod
     @abstractmethod
     #returns a list of BatteryInfos for a site
     def get_batteries_soe(cls, site_id) -> List[BatteryInfo]:
         pass
-
-    @dataclass
-    class SolarAlert:
-        site_id: str
-        site_name: str
-        site_url: str
-        alert_type: AlertType
-        severity: int  # severity in percentage (0-100% production down)
-        details: str
-        first_triggered: str
-
-        def __post_init__(self):
-            if not (0 <= self.severity <= 100):
-                raise ValueError("Severity must be between 0 and 100.")
 
     @classmethod
     @abstractmethod
@@ -89,7 +105,13 @@ cache = diskcache.Cache("/tmp/")  # Persistent cache
 CACHE_EXPIRE_HOUR = 3600
 CACHE_EXPIRE_DAY = CACHE_EXPIRE_HOUR * 24
 CACHE_EXPIRE_WEEK = CACHE_EXPIRE_DAY * 7
-CACHE_EXPIRE_MONTH = CACHE_EXPIRE_WEEK * 4
+CACHE_EXPIRE_YEAR = CACHE_EXPIRE_DAY * 365
+
+#Scatter monthly requests over a period of 10 days to avoid cache stampede.
+def CACHE_EXPIRE_MONTH():
+    base = CACHE_EXPIRE_WEEK * 4
+    offset = random.randint(-CACHE_EXPIRE_DAY * 5, CACHE_EXPIRE_DAY * 5)
+    return base + offset
 
 def disk_cache(expiration_seconds):
     def decorator(func):

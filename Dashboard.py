@@ -1,13 +1,11 @@
 import streamlit as st
 from datetime import datetime, timedelta
-import diskcache
+import pandas as pd
 
 from FleetCollector import add_alert_if_not_exists, Alert, Battery, update_alert_history, \
 update_battery_data, init_fleet_db, fetch_alerts, update_battery_data, fetch_low_batteries, fetch_all_batteries, collect_platform
 
 from SolarEdge import SolarEdgePlatform
-
-CACHE_DIR = "/tmp/"
 
 def send_browser_notification(title, message):
     js_code = f"""
@@ -30,41 +28,17 @@ def run_collection():
     collect_platform(platform)
 
 # Streamlit UI
+# Setup page and initialize DB
 st.set_page_config(page_title="Absolute Solar Monitoring", layout="wide")
 init_fleet_db()
-st.title("☀️ Absolute Solar Monitoring Dashboard ☀️")
+st.title("☀️Absolute Solar Monitoring Dashboard")
 if st.button("Run Collection"):
     run_collection()
-
-if st.button("Show Cache Stats"):
-    cache = diskcache.Cache(CACHE_DIR)
-
-    stats = cache.stats()  # Get cache stats
-    keys = list(cache.iterkeys())  # List all cache keys
-    
-    st.write("### Cache Statistics")
-    st.json(stats)
-
-    st.write(f"### Cached Items: {len(keys)}")
-    
-    if keys:
-        st.write("### Cached Keys & Values")
-        for key in keys:
-            try:
-                value = cache.get(key)
-                st.write(f"**{key}** → {value}")
-            except Exception as e:
-                st.write(f"**{key}** → [Error fetching value] {e}")
 
 st.markdown("---")
 
 st.header("🚨 Active Alerts")
 alerts_df = fetch_alerts()
-# for idx, row in alerts_df.iterrows():
-#     cols = st.columns([3, 1])
-#     cols[0].write(f"**Name:** {row['Name']} | **Score:** {row['Score']}")
-#     if cols[1].button("Action", key=idx):
-#         st.write(f"Button clicked for {row['Name']}")
 
 if not alerts_df.empty:
     # Sidebar filters
@@ -73,7 +47,7 @@ if not alerts_df.empty:
     alert_filter = st.sidebar.multiselect("Select Alert Type(s)", alerts_df['alert_type'].unique())
     severity_filter = st.sidebar.multiselect("Select Severity", alerts_df['severity'].unique())
 
-    # Apply filters dynamically
+    # Apply filters dynamically on a copy of the alerts dataframe
     filtered_df = alerts_df.copy()
     if vendor_filter:
         filtered_df = filtered_df[filtered_df['vendor_code'].isin(vendor_filter)]
@@ -82,12 +56,37 @@ if not alerts_df.empty:
     if severity_filter:
         filtered_df = filtered_df[filtered_df['severity'].isin(severity_filter)]
 
-    st.dataframe(filtered_df, height=300, column_config={
-    "site_url": st.column_config.LinkColumn(
-        label="site_url",
-        display_text=None) }
-    )
-        
+    # Create multiple views (tabs) from the filtered data
+    tab1, tab2, tab3 = st.tabs(["Detailed Alerts", "Alerts Summary", "Alert Cards"])
+
+    with tab1:
+        st.subheader("Detailed Alerts")
+        st.dataframe(filtered_df, height=300, column_config={
+            "site_url": st.column_config.LinkColumn(
+                label="site_url",
+                display_text=None
+            )
+        })
+
+    with tab2:
+        st.subheader("Alerts Summary")
+        # Example summary: count alerts by alert_type
+        if not filtered_df.empty:
+            summary_df = filtered_df.groupby("alert_type").size().reset_index(name="Count")
+            st.dataframe(summary_df)
+            st.bar_chart(summary_df.set_index("alert_type"))
+        else:
+            st.info("No data to summarize.")
+
+    with tab3:
+        st.subheader("Alert Cards")
+        # Using your previously commented-out alert card style for each row
+        for idx, row in filtered_df.iterrows():
+            cols = st.columns([3, 1])
+            cols[0].markdown(f"**Name:** {row.get('Name', 'N/A')} | **Score:** {row.get('Score', 'N/A')}")
+            if cols[1].button("Action", key=idx):
+                st.write(f"Action clicked for {row.get('Name', 'this alert')}")
+                
 else:
     st.success("No active alerts.")
     
@@ -104,6 +103,7 @@ with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
         st.dataframe(all_batteries_df, height=400)
     else:
         st.success("No battery data available.")
+
 
     # st.header("📝 Update Alert History")
     # st.markdown("Append a new entry to an alert's history log.")
