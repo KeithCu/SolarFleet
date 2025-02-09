@@ -119,10 +119,7 @@ df = pd.DataFrame({
 }).sort_values("Noon Production (kW)", ascending=True)
 
 # Streamlit dashboard header
-st.title("Extended Vertical Bar Chart for 250 Sites")
-st.markdown("""
-This dashboard displays a horizontal bar chart with extended vertical space so that all 250 site names are clearly visible.
-""")
+st.title("Fleet Production Yesterday at Noon")
 
 # Create a horizontal bar chart using Plotly Express
 fig = px.bar(
