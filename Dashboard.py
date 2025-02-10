@@ -1,16 +1,16 @@
-import streamlit as st
 from datetime import datetime, timedelta
-import pandas as pd
 import numpy as np
+import pandas as pd
 import plotly.express as px
+import requests
+import streamlit as st
+import streamlit.components.v1 as components
+
+import SolarPlatform
 import SqlModels as Sql
 import Database as db
-import SolarPlatform
-
-from SolarEdge import SolarEdgePlatform
-import requests
-import streamlit.components.v1 as components
 from FleetCollector import collect_platform
+from SolarEdge import SolarEdgePlatform
 
 def send_browser_notification(title, message):
     js_code = f"""
@@ -37,12 +37,27 @@ def create_map_view(sites_df):
     avg_lon = sites_df['longitude'].mean()
     m = folium.Map(location=[avg_lat, avg_lon], zoom_start=5)
 
-    # Add markers for each site
     for _, row in sites_df.iterrows():
         folium.Marker(
             location=[row['latitude'], row['longitude']],
             popup=f"{row['site_name']} ({row['site_id']})",
-            tooltip=row['site_name']
+            icon=folium.DivIcon(
+                html=f"""
+                    <div style="
+                        background-color: #2A81CB; 
+                        border-radius: 50%;
+                        width: 30px;
+                        height: 30px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        border: 2px solid #fff;
+                        font-weight: bold;">
+                        {row['power']}
+                    </div>
+                """
+            )
         ).add_to(m)
 
     # Display the map in Streamlit

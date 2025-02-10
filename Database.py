@@ -1,9 +1,11 @@
 from datetime import datetime
-import SqlModels as Sql
-import SolarPlatform
+
 import numpy as np
 import pandas as pd
 from sklearn.neighbors import BallTree
+
+import SqlModels as Sql
+import SolarPlatform
 
 def add_alert_if_not_exists(vendor_code, site_id, site_name, site_url, alert_type, details, severity, first_triggered):
     # Use a context manager to ensure the session is closed properly

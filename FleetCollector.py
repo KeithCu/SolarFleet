@@ -1,16 +1,16 @@
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from typing import List
 import sys
 import math
 import time
 import requests
+
+from bs4 import BeautifulSoup
 import pandas as pd
 import numpy as np
-import SqlModels as Sql
-
 from webdriver_manager.chrome import ChromeDriverManager
 
+import SqlModels as Sql
 import SolarPlatform
 import Database as db
 
