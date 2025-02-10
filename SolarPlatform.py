@@ -7,6 +7,9 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import Optional
 import random
+import math
+import time
+from datetime import datetime, timedelta
 
 @dataclass
 class SiteInfo:
@@ -14,7 +17,6 @@ class SiteInfo:
     name: str
     url: str
     zipcode: str
-    inverters: List[str]
 
 @dataclass
 class BatteryInfo:
@@ -68,7 +70,7 @@ class SolarPlatform(ABC):
     @classmethod
     @abstractmethod
     #returns production in KW at a particular time
-    def get_production(cls, site_id, reference_time) -> List[float]:
+    def get_production(cls, site_id, reference_time) -> float:
         pass
 
     @classmethod
@@ -127,3 +129,60 @@ def disk_cache(expiration_seconds):
         
         return wrapper
     return decorator
+
+def get_recent_noon() -> str:
+    # Get current local time (with tz info)
+    now = datetime.now().astimezone()
+    today = now.date()
+    
+    # Construct the threshold: today at 12:30 local time
+    threshold = datetime.combine(today, time(12, 30), tzinfo=now.tzinfo)
+    
+    # Decide which noon to use:
+    #   If now is after or equal to 12:30, use today at noon (12:00);
+    #   otherwise, use yesterday at noon.
+    if now >= threshold:
+        measurement_date = today
+    else:
+        measurement_date = today - timedelta(days=1)
+    
+    measurement_dt = datetime.combine(measurement_date, time(12, 0), tzinfo=now.tzinfo)
+    
+    # Format the datetime into the desired string.
+    # The example format is: "2022-11-14T11:30:54.276805300Z"
+    # Python’s microsecond precision gives 6 digits. To mimic 9 digits, we append "000".
+    dt_str = measurement_dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "000"
+    
+    # Format the timezone offset:
+    # If the offset is 0, we use "Z"; otherwise, we insert a colon to get ±HH:MM.
+    offset = measurement_dt.utcoffset()
+    if offset == timedelta(0):
+        tz_str = "Z"
+    else:
+        tz_offset = measurement_dt.strftime("%z")  # e.g., "+0100"
+        tz_str = tz_offset[:3] + ":" + tz_offset[3:]  # becomes "+01:00"
+    
+    return dt_str + tz_str
+
+import pgeocode
+nomi = pgeocode.Nominatim('us')
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    return c * 3958.8  # Earth radius in miles
+
+def get_coordinates(zip_code):
+    try:
+        result = nomi.query_postal_code(zip_code)
+        if result is None or math.isnan(result.latitude) or math.isnan(result.longitude):
+            print(f"Failed to get coordinates for zip code: {zip_code}")
+            return None, None
+        return result.latitude, result.longitude
+    except Exception as e:
+        print(f"Error getting coordinates for zip code {zip_code}: {e}")
+        return None, None

@@ -2,7 +2,7 @@ import requests
 from typing import List, Dict
 from datetime import datetime, timedelta
 from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
-
+import random
 import SolarPlatform
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
@@ -47,7 +47,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
         for site in sites:
             site_id = site.get('siteId')
-            site_info = SolarPlatform.SiteInfo(site.get('siteId'), site.get('name'), '', site['location']['zip'], [])
+            site_info = SolarPlatform.SiteInfo(site.get('siteId'), site.get('name'), '', site['location']['zip'])
             sites_dict[site_id] = site_info
                 
         return sites_dict
@@ -66,13 +66,11 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return batteries
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
     def get_production(cls, site_id, reference_time):
         end_time = reference_time + timedelta(minutes=15)
 
-        #todo fix me to get the serial numbers to do this properly
-        url = SOLAREDGE_BASE_URL + f'/sites/{site_id}/inverters/{serialNumber}/power'    
-        #url = f'{}/sites/{site_id}/storage/{serial_number}/state-of-energy'
+        url = SOLAREDGE_BASE_URL + f'/sites/{site_id}/power'    
         params = {
             'from': reference_time.isoformat() + 'Z',
             'to': end_time.isoformat() + 'Z',
@@ -82,9 +80,9 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
-        soe_data = response.json().get('values', [])
+        power = response.json().get('values', [])
         
-        latest_value = next((entry['value'] for entry in reversed(soe_data) if entry['value'] is not None), None)
+        latest_value = next((entry['value'] for entry in reversed(power) if entry['value'] is not None), None)
         return latest_value
 
 
@@ -180,41 +178,6 @@ def main():
             platform.log("No alerts found for this site.")
     except Exception as e:
         platform.log(f"Error while fetching alerts for site {site_id}: {e}")
-
-
-    # # Vendor data using different naming conventions:
-    # vendor_data = {
-    #     "site_id": 123,
-    #     "name": "Example Site",
-    #     "url": "http://example.com"
-    # }
-
-    # # Define a mapping: vendor key -> dataclass field name
-    # key_mapping = {
-    #     "site_id": "siteId",
-    #     # add more mappings here as needed
-    # }
-
-    # def map_vendor_keys(data: dict, mapping: dict) -> dict:
-    #     """
-    #     Transforms keys in the vendor dictionary according to the provided mapping.
-    #     Any key not found in the mapping will be kept as-is.
-    #     """
-    #     return {mapping.get(key, key): value for key, value in data.items()}
-
-    # # Transform the vendor dictionary:
-    # converted_data = map_vendor_keys(vendor_data, key_mapping)
-
-    # # Optionally, you can filter out any keys that are not part of SiteInfo:
-    # def filter_fields(cls, data: dict) -> dict:
-    #     field_names = {f.name for f in fields(cls)}
-    #     return {k: v for k, v in data.items() if k in field_names}
-
-    # filtered_data = filter_fields(SiteInfo, converted_data)
-
-    # # Create the dataclass instance using the filtered and mapped dictionary:
-    # site_info = SiteInfo(**filtered_data)
-
 
 if __name__ == "__main__":
     main()
