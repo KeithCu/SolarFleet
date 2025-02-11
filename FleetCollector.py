@@ -27,6 +27,11 @@ def collect_platform(platform):
     try:
         sites = platform.get_sites_map()
         for site_id in sites.keys():
+            site = sites[site_id]
+
+            #This needs to be moved to later when we have the nearest site information
+            db.add_site_if_not_exists(platform.get_vendorcode(), site_id, sites[site_id].name, site.url, "nearest_vendorcode", "nearest_siteid", "nearest_distance")
+
             battery_data = platform.get_batteries_soe(site_id)
             for battery in battery_data:                    
                 db.update_battery_data(platform.get_vendorcode(), site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'], "")
@@ -63,8 +68,7 @@ def collect_platform(platform):
     try:
         alerts = platform.get_alerts() 
         for alert in alerts:
-            db.add_alert_if_not_exists(platform.get_vendorcode(), alert.site_id, alert.site_name, 
-                                    alert.site_url, str(alert.alert_type), alert.details, alert.severity, alert.first_triggered)
+            db.add_alert_if_not_exists(platform.get_vendorcode(), alert.site_id,  str(alert.alert_type), alert.details, alert.severity, alert.first_triggered)
 
     except Exception as e:
         platform.log(f"Error while fetching alerts: {e}")

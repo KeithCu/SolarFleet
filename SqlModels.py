@@ -1,6 +1,7 @@
 from datetime import datetime
-from sqlalchemy import PrimaryKeyConstraint, create_engine, Column, String, Float, DateTime, Integer, Float, Boolean
+from sqlalchemy import PrimaryKeyConstraint, create_engine, Column, String, Float, DateTime, Integer, Float, Date
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.types import PickleType
 
 DATABASE_URL = "sqlite:///solar_alerts.db"
 Base = declarative_base()
@@ -9,14 +10,27 @@ SessionLocal = sessionmaker(bind=engine)
 
 #
 # Define tables
-# This is a superset of SolarPlatform.SolarAlert
+
+class Site(Base):
+    __tablename__ = "sites"
+    vendor_code = Column(String(3), nullable=False)
+    site_id = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    url   = Column(String, nullable=False)
+    history    = Column(String, default="")  # Track alert history
+
+    nearest_vendor_code = Column(String(3), nullable=False)
+    nearest_site_id = Column(String, nullable=False)
+    nearest_distance = Column(String, nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint('vendor_code', 'site_id'),
+    )
 
 class Alert(Base):
     __tablename__ = "alerts"
     vendor_code = Column(String(3), nullable=False)
     site_id = Column(String, nullable=False)
-    site_name = Column(String, nullable=False)
-    site_url   = Column(String, nullable=False)
     
     alert_type = Column(String, nullable=False)
     details    = Column(String, nullable=False)
@@ -24,29 +38,16 @@ class Alert(Base):
 
     first_triggered  = Column(DateTime, default=datetime.utcnow)
     resolved_date   = Column(DateTime, nullable=True)
-    history    = Column(String, default="")  # Track changes/updates
 
     __table_args__ = (
         PrimaryKeyConstraint('vendor_code', 'site_id', 'alert_type'),
     )
-
-class Production(Base):
-    __tablename__ = "production"
-    vendor_code = Column(String(3), nullable=False)
-    site_id = Column(String, nullable=False)
-    zip_code = Column(String, nullable=False)
-
-    nearest_vendor_code = Column(String(3), nullable=False)
-    nearest_site_id = Column(String, nullable=False)
-    nearest_distance = Column(String, nullable=False)
-
-    noon_production = Column(Float, nullable=True)
-    site_url   = Column(String, nullable=False)
-    last_updated = Column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        PrimaryKeyConstraint('vendor_code', 'site_id', ),
-    )
+    
+class ProductionHistory(Base):
+    __tablename__ = "productionhistory"
+    production_day = Column(Date, primary_key=True, default=lambda: datetime.utcnow().date())
+    #stores a set of SolarPlatform.ProductionRecord, one for each site
+    data = Column(PickleType, nullable=False)
 
 class Battery(Base):
     __tablename__ = "batteries"
@@ -57,7 +58,6 @@ class Battery(Base):
     model_number = Column(String, nullable=False)
     state_of_energy = Column(Float, nullable=True)
 
-    site_url   = Column(String, nullable=False)
     last_updated = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (

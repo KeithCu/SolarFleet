@@ -1,16 +1,18 @@
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
+import folium
 import plotly.express as px
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
-
+from streamlit_folium import folium_static
 import SolarPlatform
 import SqlModels as Sql
 import Database as db
 from FleetCollector import collect_platform
 from SolarEdge import SolarEdgePlatform
+import altair as alt
 
 def send_browser_notification(title, message):
     js_code = f"""
@@ -29,22 +31,31 @@ def send_browser_notification(title, message):
     st.components.v1.html(f"<script>{js_code}</script>", height=0)
 
 def create_map_view(sites_df):
-    import folium
-    from streamlit_folium import folium_static
-
-    # Create a map centered around the average coordinates
+    """
+    Create a folium map that shows each site's current noon production.
+    The icon background color is red if there is no production (power == 0),
+    otherwise it remains blue.
+    """
+    # Center the map at the average location of all sites
     avg_lat = sites_df['latitude'].mean()
     avg_lon = sites_df['longitude'].mean()
     m = folium.Map(location=[avg_lat, avg_lon], zoom_start=5)
 
+    # Iterate over the DataFrame and add markers
     for _, row in sites_df.iterrows():
+        # Change icon color if production is zero (i.e., potential issue)
+        color = "#FF0000" if row['power'] == 0 else "#2A81CB"
+        popup_html = (
+            f"<strong>{row['site_name']} ({row['site_id']})</strong><br>"
+            f"Production: {row['power']} W"
+        )
         folium.Marker(
             location=[row['latitude'], row['longitude']],
-            popup=f"{row['site_name']} ({row['site_id']})",
+            popup=folium.Popup(popup_html, max_width=300),
             icon=folium.DivIcon(
                 html=f"""
                     <div style="
-                        background-color: #2A81CB; 
+                        background-color: {color}; 
                         border-radius: 50%;
                         width: 30px;
                         height: 30px;
@@ -59,9 +70,34 @@ def create_map_view(sites_df):
                 """
             )
         ).add_to(m)
-
-    # Display the map in Streamlit
     folium_static(m)
+
+def display_historical_chart(historical_df, site_ids):
+    """
+    Display an Altair line chart showing the aggregated historical production data.
+    The production data (power) is summed for each day across the selected sites.
+    If no sites are selected, data for all sites is used.
+    """
+    if not site_ids:
+        # If no sites are selected, default to all sites.
+        site_data = historical_df.copy()
+    else:
+        site_data = historical_df[historical_df['site_id'].isin(site_ids)]
+    
+    # Aggregate the production by date (summing the production values)
+    agg_data = site_data.groupby("date", as_index=False)["power"].sum()
+    
+    # Create a thick line by specifying the size parameter in mark_line.
+    chart = alt.Chart(agg_data).mark_line(size=5).encode(
+        x=alt.X('date:T', title='Date'),
+        y=alt.Y('power:Q', title='Aggregated Production (W)'),
+        tooltip=['date:T', 'power:Q']
+    ).properties(
+        title="Aggregated Historical Production Data"
+    )
+    
+    st.altair_chart(chart, use_container_width=True)
+
 
 def filter_and_sort_alerts(alerts_df, vendor_filter, alert_filter, severity_filter, sort_by, ascending):
     filtered_df = alerts_df.copy()

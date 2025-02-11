@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 
 import numpy as np
 import pandas as pd
@@ -7,7 +7,36 @@ from sklearn.neighbors import BallTree
 import SqlModels as Sql
 import SolarPlatform
 
-def add_alert_if_not_exists(vendor_code, site_id, site_name, site_url, alert_type, details, severity, first_triggered):
+def add_site_if_not_exists(vendor_code, site_id, name, url, nearest_vendor_code, nearest_site_id, nearest_distance):
+
+    session = Sql.SessionLocal()
+
+    # Check if a Site with the given primary key already exists.
+    existing_site = session.query(Sql.Site).filter_by(
+        vendor_code=vendor_code,
+        site_id=site_id
+    ).first()
+
+    if existing_site:
+        return existing_site
+
+    # Create a new Site instance if one doesn't exist.
+    new_site = Sql.Site(
+        vendor_code=vendor_code,
+        site_id=site_id,
+        name=name,
+        url=url,
+        history="Notes: ",
+        nearest_vendor_code=nearest_vendor_code,
+        nearest_site_id=nearest_site_id,
+        nearest_distance=nearest_distance
+    )
+    session.add(new_site)
+    session.commit()
+    return new_site
+
+
+def add_alert_if_not_exists(vendor_code, site_id, alert_type, details, severity, first_triggered):
     # Use a context manager to ensure the session is closed properly
     with Sql.SessionLocal() as session:
         # Query for an existing alert that is unresolved (resolved is NULL)
@@ -25,13 +54,11 @@ def add_alert_if_not_exists(vendor_code, site_id, site_name, site_url, alert_typ
             new_alert = Sql.Alert(
                 vendor_code = vendor_code,
                 site_id = site_id,
-                site_name = site_name,
-                site_url = site_url,
                 alert_type = alert_type,
                 details = details,
                 severity = severity,
                 first_triggered = first_triggered,
-                resolved_date = None,  # No resolution date means it's unresolved
+                resolved_date = None,
                 history = history_message,
             )
             session.add(new_alert)
@@ -39,12 +66,12 @@ def add_alert_if_not_exists(vendor_code, site_id, site_name, site_url, alert_typ
 
 def fetch_production_data():
     session = Sql.SessionLocal()
-    query = session.query(Sql.Production)
+    query = session.query(Sql.ProductionHistory)
     production_data = pd.read_sql(query.statement, session.bind)
     session.close()
     return production_data
 
-def update_battery_data(vendor_code, site_id, serial_number, model_number, state_of_energy, site_url):
+def update_battery_data(vendor_code, site_id, serial_number, model_number, state_of_energy):
     session = Sql.SessionLocal()
     
     existing_battery = session.query(Sql.Battery).filter(
@@ -63,7 +90,6 @@ def update_battery_data(vendor_code, site_id, serial_number, model_number, state
             serial_number=serial_number,
             model_number=model_number,
             state_of_energy=state_of_energy,
-            site_url=site_url,
             last_updated=datetime.utcnow()
         )
         session.add(new_battery)
@@ -102,6 +128,50 @@ def add_alert(inverter, alert_type, message):
     session.add(new_alert)
     session.commit()
     session.close()
+
+def get_production_by_day(production_day: date) -> set:
+    session = Sql.SessionLocal()
+    try:
+        record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
+        if record:
+            # Ensure that the data is returned as a set.
+            return record.data if isinstance(record.data, set) else set(record.data)
+        return set()
+    finally:
+        session.close()
+
+
+def insert_or_update_production_blob(vendor_code, new_data, production_day):
+    if production_day is None:
+        production_day = datetime.utcnow().date()
+    session = Sql.SessionLocal()
+    try:
+        record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
+        if record:
+            # Ensure we have a set; if it’s stored as something else, coerce it.
+            prod_set = record.data if isinstance(record.data, set) else set(record.data)
+        else:
+            prod_set = set()
+
+        # For each site in new_data, remove any existing record for that vendor/site and add the new one.
+        for site_id, production in new_data.items():
+            new_record = SolarPlatform.ProductionRecord(vendor_code, site_id, production)
+            prod_set.add(new_record)
+
+        if record:
+            record.data = prod_set
+        else:
+            record = SolarPlatform.ProductionHistory(production_day=production_day, data=prod_set)
+            session.add(record)
+        session.commit()
+        return record
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
 
 # Bulk process a list of SolarProduction data. 
 

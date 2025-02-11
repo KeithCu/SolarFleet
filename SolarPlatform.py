@@ -33,8 +33,7 @@ class AlertType:
 @dataclass
 class SolarAlert:
     site_id: str
-    site_name: str
-    site_url: str
+    name: str
     alert_type: str
     severity: int  # severity in percentage (0-100% production down)
     details: str
@@ -44,6 +43,7 @@ class SolarAlert:
         if not (0 <= self.severity <= 100):
             raise ValueError("Severity must be between 0 and 100.")
 
+#In memory production information
 @dataclass
 class SolarProduction:
     site_id: str
@@ -51,6 +51,22 @@ class SolarProduction:
     site_zipcode: int
     site_production: float
     site_url: str
+
+#In Sqlite, for each day, we store a set of ProductionRecord objects, one for each site.
+@dataclass
+class ProductionRecord:
+    vendor_code: str
+    site_id: str
+    production: float
+    #Two ProductionRecord objects are considered equal if they share the same vendor and site.
+
+    def __hash__(self):
+        return hash((self.vendor_code, self.site_id))
+
+    def __eq__(self, other):
+        if not isinstance(other, ProductionRecord):
+            return NotImplemented
+        return (self.vendor_code, self.site_id) == (other.vendor_code, other.site_id)
 
 class SolarPlatform(ABC):
 #    log_container = st.empty()  # A Streamlit container to display log messages

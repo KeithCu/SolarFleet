@@ -1,11 +1,13 @@
 import requests
 from typing import List, Dict
 from datetime import datetime, timedelta
-from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
 import random
+
 import SolarPlatform
+from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
+SOLAREDGE_SITE_URL = 'https://monitoring.solaredge-web/p/site/'
 
 SOLAREDGE_HEADERS = {
     "X-API-Key": SOLAREDGE_V2_API_KEY,
@@ -40,6 +42,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return all_sites
 
     @classmethod
+    #@SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
     def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         sites = cls.get_sites_list()
 
@@ -47,7 +50,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
         for site in sites:
             site_id = site.get('siteId')
-            site_info = SolarPlatform.SiteInfo(site.get('siteId'), site.get('name'), '', site['location']['zip'])
+            site_url = SOLAREDGE_SITE_URL + str(site_id)
+            site_info = SolarPlatform.SiteInfo(site.get('siteId'), site.get('name'), site_url, site['location']['zip'])
             sites_dict[site_id] = site_info
                 
         return sites_dict
@@ -66,7 +70,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return batteries
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
     def get_production(cls, site_id, reference_time):
         end_time = reference_time + timedelta(minutes=15)
 
@@ -87,7 +91,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
     def get_battery_state_of_energy(cls, site_id, serial_number):
         end_time = datetime.utcnow()
         start_time = end_time - timedelta(minutes=15)
@@ -137,9 +141,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             alerts = response.json()
             for alert in alerts:
                 a_site_id = alert.get('siteId')
-                site_url = ''
                 alert_details = ''
-                solarAlert = SolarPlatform.SolarAlert(a_site_id, sites_dict[a_site_id].name, site_url, alert.get('type'), alert.get('impact'), alert_details, alert.get('firstTriggered'))
+                solarAlert = SolarPlatform.SolarAlert(a_site_id, alert.get('type'), alert.get('impact'), alert_details, alert.get('firstTriggered'))
                 all_alerts.append(solarAlert)
 
             return all_alerts
@@ -157,6 +160,7 @@ def main():
             platform.log("Retrieved Sites:")
             for site_id in sites.keys():
                 pass
+                
                 #battery_data = platform.get_batteries_soe(site_id)
                 #platform.log(f"Site {site_id} Battery Data: {battery_data}")
         else:
