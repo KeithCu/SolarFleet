@@ -125,7 +125,8 @@ def get_site_coordinates(sites):
                  "site_name": site_info.name,
                 "latitude": lat,
                 "longitude": lon,
-                "zipcode": zipcode
+                "zipcode": zipcode,
+                "power": 0
             })
     return pd.DataFrame(site_data)
 
@@ -140,7 +141,7 @@ def display_map_with_production():
 
     if not df.empty:
         site_df = site_df.merge(df, on="site_id", how="left")
-        
+
     create_map_view(site_df)
 
 # Streamlit UI

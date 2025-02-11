@@ -34,7 +34,7 @@ def collect_platform(platform):
 
             battery_data = platform.get_batteries_soe(site_id)
             for battery in battery_data:                    
-                db.update_battery_data(platform.get_vendorcode(), site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'], "")
+                db.update_battery_data(platform.get_vendorcode(), site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'])
                 platform.log(f"Site {site_id} Battery Data: {battery_data}")
 
 
@@ -60,7 +60,7 @@ def collect_platform(platform):
     try:
         alerts = platform.get_alerts() 
         for alert in alerts:
-            db.add_alert_if_not_exists(platform.get_vendorcode(), alert.site_id,  str(alert.alert_type), alert.details, alert.severity, alert.first_triggered)
+            db.add_alert_if_not_exists(platform.get_vendorcode(), alert.site_id, str(alert.alert_type), alert.details, alert.severity, alert.first_triggered)
 
     except Exception as e:
         platform.log(f"Error while fetching alerts: {e}")

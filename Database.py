@@ -45,7 +45,6 @@ def add_alert_if_not_exists(vendor_code, site_id, alert_type, details, severity,
 
         if not existing_alert:
             now = datetime.utcnow()
-            history_message = (f"Notes: ")
             
             new_alert = Sql.Alert(
                 vendor_code = vendor_code,
@@ -55,7 +54,6 @@ def add_alert_if_not_exists(vendor_code, site_id, alert_type, details, severity,
                 severity = severity,
                 first_triggered = first_triggered,
                 resolved_date = None,
-                history = history_message,
             )
             session.add(new_alert)
             session.commit()
@@ -109,12 +107,7 @@ def fetch_all_batteries():
     session.close()
     return all_batteries
 
-def add_alert(inverter, alert_type, message):
-    session = Sql.SessionLocal()
-    new_alert = Sql.Alert(inverter=inverter, alert_type=alert_type, message=message)
-    session.add(new_alert)
-    session.commit()
-    session.close()
+
 
 def get_production_by_day(production_day: date) -> set:
     session = Sql.SessionLocal()

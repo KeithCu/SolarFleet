@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from zoneinfo import ZoneInfo
 import streamlit as st
 from typing import List, Dict
 import diskcache
@@ -32,7 +33,6 @@ class AlertType:
 @dataclass
 class SolarAlert:
     site_id: str
-    name: str
     alert_type: str
     severity: int  # severity in percentage (0-100% production down)
     details: str
@@ -145,39 +145,27 @@ def disk_cache(expiration_seconds):
         return wrapper
     return decorator
 
-def get_recent_noon() -> str:
-    # Get current local time (with tz info)
-    now = datetime.now().astimezone()
+from datetime import datetime, timedelta, time
+
+#FIXME, hard codes Eastern timezone for now
+
+def get_recent_noon() -> datetime:
+
+    eastern = ZoneInfo("America/New_York")
+    now = datetime.now(eastern)
     today = now.date()
     
-    # Construct the threshold: today at 12:30 local time
-    threshold = datetime.combine(today, time(12, 30), tzinfo=now.tzinfo)
+    # Define the threshold: today at 12:30 in Eastern Time.
+    threshold = datetime.combine(today, time(12, 30), tzinfo=eastern)
     
-    # Decide which noon to use:
-    #   If now is after or equal to 12:30, use today at noon (12:00);
-    #   otherwise, use yesterday at noon.
     if now >= threshold:
         measurement_date = today
     else:
         measurement_date = today - timedelta(days=1)
     
-    measurement_dt = datetime.combine(measurement_date, time(12, 0), tzinfo=now.tzinfo)
-    
-    # Format the datetime into the desired string.
-    # The example format is: "2022-11-14T11:30:54.276805300Z"
-    # Python’s microsecond precision gives 6 digits. To mimic 9 digits, we append "000".
-    dt_str = measurement_dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "000"
-    
-    # Format the timezone offset:
-    # If the offset is 0, we use "Z"; otherwise, we insert a colon to get ±HH:MM.
-    offset = measurement_dt.utcoffset()
-    if offset == timedelta(0):
-        tz_str = "Z"
-    else:
-        tz_offset = measurement_dt.strftime("%z")  # e.g., "+0100"
-        tz_str = tz_offset[:3] + ":" + tz_offset[3:]  # becomes "+01:00"
-    
-    return dt_str + tz_str
+    # Create a datetime for noon (12:00) on the chosen date in Eastern Time.
+    measurement_dt = datetime.combine(measurement_date, time(12, 0), tzinfo=eastern)
+    return measurement_dt
 
 import pgeocode
 nomi = pgeocode.Nominatim('us')
