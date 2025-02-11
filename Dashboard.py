@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from dataclasses import asdict
 import numpy as np
 import pandas as pd
 import folium
@@ -13,6 +14,7 @@ import Database as db
 from FleetCollector import collect_platform
 from SolarEdge import SolarEdgePlatform
 import altair as alt
+
 
 def send_browser_notification(title, message):
     js_code = f"""
@@ -73,11 +75,6 @@ def create_map_view(sites_df):
     folium_static(m)
 
 def display_historical_chart(historical_df, site_ids):
-    """
-    Display an Altair line chart showing the aggregated historical production data.
-    The production data (power) is summed for each day across the selected sites.
-    If no sites are selected, data for all sites is used.
-    """
     if not site_ids:
         # If no sites are selected, default to all sites.
         site_data = historical_df.copy()
@@ -138,9 +135,12 @@ def display_map_with_production():
     site_df = get_site_coordinates(sites)
 
     # Fetch production data
-    production_data = db.fetch_production_data()
-    site_df = site_df.merge(production_data, on="site_id", how="left")
+    production_data = db.get_production_by_day(SolarPlatform.get_recent_noon())
+    df = pd.DataFrame([asdict(record) for record in production_data])
 
+    if not df.empty:
+        site_df = site_df.merge(df, on="site_id", how="left")
+        
     create_map_view(site_df)
 
 # Streamlit UI
@@ -219,7 +219,8 @@ with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
 st.header("🌍 Site Map with Production Data")
 
 # Fetch production data for all sites
-production_data = db.fetch_production_data()
+production_set = db.get_production_by_day(SolarPlatform.get_recent_noon())
+production_data = pd.DataFrame([asdict(record) for record in production_set])
 
 display_map_with_production()
 

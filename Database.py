@@ -8,10 +8,8 @@ import SqlModels as Sql
 import SolarPlatform
 
 def add_site_if_not_exists(vendor_code, site_id, name, url, nearest_vendor_code, nearest_site_id, nearest_distance):
-
     session = Sql.SessionLocal()
 
-    # Check if a Site with the given primary key already exists.
     existing_site = session.query(Sql.Site).filter_by(
         vendor_code=vendor_code,
         site_id=site_id
@@ -37,9 +35,7 @@ def add_site_if_not_exists(vendor_code, site_id, name, url, nearest_vendor_code,
 
 
 def add_alert_if_not_exists(vendor_code, site_id, alert_type, details, severity, first_triggered):
-    # Use a context manager to ensure the session is closed properly
     with Sql.SessionLocal() as session:
-        # Query for an existing alert that is unresolved (resolved is NULL)
         existing_alert = session.query(Sql.Alert).filter(
             Sql.Alert.vendor_code == vendor_code,
             Sql.Alert.site_id == site_id,
@@ -63,13 +59,6 @@ def add_alert_if_not_exists(vendor_code, site_id, alert_type, details, severity,
             )
             session.add(new_alert)
             session.commit()
-
-def fetch_production_data():
-    session = Sql.SessionLocal()
-    query = session.query(Sql.ProductionHistory)
-    production_data = pd.read_sql(query.statement, session.bind)
-    session.close()
-    return production_data
 
 def update_battery_data(vendor_code, site_id, serial_number, model_number, state_of_energy):
     session = Sql.SessionLocal()
@@ -98,12 +87,10 @@ def update_battery_data(vendor_code, site_id, serial_number, model_number, state
     session.close()
 
 # Battery Data Update Function
-def fetch_alerts(active_only=True):
+def fetch_alerts():
     session = Sql.SessionLocal()
 
-    query = session.query(Sql.Alert).filter(Sql.Alert.alert_type != "SNOW_ON_SITE")
-    # if active_only:
-    #     query = query.filter(Alert.resolved == False)
+    query = session.query(Sql.Alert)
     alerts = pd.read_sql(query.statement, session.bind)
     session.close()
     return alerts
@@ -140,10 +127,7 @@ def get_production_by_day(production_day: date) -> set:
     finally:
         session.close()
 
-
-def insert_or_update_production_blob(vendor_code, new_data, production_day):
-    if production_day is None:
-        production_day = datetime.utcnow().date()
+def insert_or_update_production_set(vendor_code, new_data, production_day):
     session = Sql.SessionLocal()
     try:
         record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
@@ -153,7 +137,6 @@ def insert_or_update_production_blob(vendor_code, new_data, production_day):
         else:
             prod_set = set()
 
-        # For each site in new_data, remove any existing record for that vendor/site and add the new one.
         for site_id, production in new_data.items():
             new_record = SolarPlatform.ProductionRecord(vendor_code, site_id, production)
             prod_set.add(new_record)

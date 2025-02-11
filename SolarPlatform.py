@@ -8,8 +8,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 import random
 import math
-import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 
 @dataclass
 class SiteInfo:

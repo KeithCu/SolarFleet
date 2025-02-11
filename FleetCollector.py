@@ -37,15 +37,7 @@ def collect_platform(platform):
                 db.update_battery_data(platform.get_vendorcode(), site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'], "")
                 platform.log(f"Site {site_id} Battery Data: {battery_data}")
 
-            # # Check if production data for today already exists
-            # today = datetime.utcnow().date()
-            # session = Sql.SessionLocal()
-            # existing_production = session.query(Sql.Production).filter(
-            #     Sql.Production.vendor_code == platform.get_vendorcode(),
-            #     Sql.Production.site_id == site_id,
-            #     Sql.Production.last_updated >= today
-            # ).first()
-            # session.close()
+
 
             # if not existing_production:
             #     # Fetch production data
