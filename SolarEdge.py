@@ -42,7 +42,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return all_sites
 
     @classmethod
-    #@SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
     def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         sites = cls.get_sites_list()
 
@@ -71,7 +71,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return batteries
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_DAY * 2)
     def get_production(cls, site_id, reference_time):
         end_time = reference_time + timedelta(minutes=15)
 

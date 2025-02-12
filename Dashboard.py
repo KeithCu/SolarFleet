@@ -45,20 +45,25 @@ def create_map_view(sites_df):
     # Center the map at the average location of all sites (initially)
     avg_lat = sites_df['latitude'].mean()
     avg_lon = sites_df['longitude'].mean()
-    m = folium.Map(location=[avg_lat, avg_lon], zoom_start=5)
+    m = folium.Map(location=[avg_lat, avg_lon], zoom_start=5, width='100%')
     
     # Create a list to collect marker coordinates
     marker_coords = []
     
+    # Define an approximate bounding box for Michigan.
+    MIN_LAT, MAX_LAT = 41.7, 48.3
+    MIN_LON, MAX_LON = -90, -82
+
     # Iterate over the DataFrame and add markers
     for _, row in sites_df.iterrows():
         lat = row['latitude']
         lon = row['longitude']
-        # Check for invalid coordinates
-        if np.isnan(lat) or np.isnan(lon):
-            print("bug!")
-            lat, lon = 43.0, -38.1  # fallback coordinates
-
+        
+        # Sanity check: ignore if lat/lon is NaN or outside Michigan's bounding box.
+        if np.isnan(lat) or np.isnan(lon) or lat < MIN_LAT or lat > MAX_LAT or lon < MIN_LON or lon > MAX_LON:
+            print(f"Skipping marker for {row.get('site_id')} - {row.get('name')}: coordinates ({lat}, {lon}) out of bounds")
+            continue  # Skip this marker
+        
         marker_coords.append([lat, lon])
         
         color = "#FF0000" if row['production_kw'] == 0 else "#2A81CB"
@@ -89,11 +94,11 @@ def create_map_view(sites_df):
             )
         ).add_to(m)
     
-    # Adjust the map view to the bounds of the markers
+    # Adjust the map view to the bounds of the markers, if any were added.
     if marker_coords:
         m.fit_bounds(marker_coords)
     
-    st_folium(m)
+    st_folium(m, width=1200) #, zoom=5, zoom_snap=0.1)
 
 def display_historical_chart(historical_df, site_ids):
     if not site_ids:
@@ -149,12 +154,26 @@ def get_site_coordinates(sites):
             })
     return pd.DataFrame(site_data)
 
+def login():
+    # Create a password input widget that masks the input
+    password = st.text_input("Enter the password", type="password")
+    
+    # When the login button is clicked, validate the password
+    if st.button("Login"):
+        # Replace 'my_secret_password' with your actual password
+        if password == "Absolute1431":
+            st.session_state.authenticated = True
+            st.success("Logged in successfully!")
+        else:
+            st.error("Incorrect password. Please try again.")
 
 # Streamlit UI
 # Setup page and initialize DB
 st.set_page_config(page_title="Absolute Solar Monitoring", layout="wide")
 Sql.init_fleet_db()
 st.title("☀️Absolute Solar Monitoring Dashboard")
+
+
 if st.button("Run Collection"):
     run_collection()
 
@@ -244,9 +263,12 @@ df = pd.DataFrame([asdict(record) for record in production_data])
 if not df.empty:
     site_df = site_df.merge(df, on="site_id", how="left")
 
+#Trim the values to 2 decimal places
+site_df['production_kw'] = site_df['production_kw'].round(2)
+
 create_map_view(site_df)
 
-if not site_df.empty:
+if 'latitude' in site_df.columns:
     # Sort the DataFrame in place by production_kw in descending order.
     site_df.sort_values("production_kw", ascending=False, inplace=True)
         
