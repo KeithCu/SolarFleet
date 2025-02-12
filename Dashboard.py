@@ -236,8 +236,13 @@ sites = platform.get_sites_map()
 
 site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
 
+def assign_site_type(site_id):
+    return site_id[:2]
+
+site_df["vendor_code"] = site_df["site_id"].apply(assign_site_type)
+
 #Merge the production data with the site data
-if not df.empty:
+if not df.empty and 'latitude' in site_df.columns:
     site_df = site_df.merge(df, on="site_id", how="left")
 
     #Trim the values to 2 decimal places
@@ -245,32 +250,33 @@ if not df.empty:
 
     create_map_view(site_df)
 
-    if 'latitude' in site_df.columns:
-        # Sort the DataFrame in place by production_kw in descending order.
-        site_df.sort_values("production_kw", ascending=False, inplace=True)
-        
-        # Build the horizontal bar chart.
-        # The y-axis is sorted by production_kw in descending order so that
-        # the highest production value appears at the top.
-        chart = alt.Chart(site_df).mark_bar().encode(
-            x=alt.X('production_kw:Q', title='Production (kW)'),
-            y=alt.Y(
-                'name:N', 
-                title='Site Name', 
-                sort=alt.SortField(field='production_kw', order='descending')
-            ),
-            tooltip=[
-                alt.Tooltip('name:N', title='Site Name'),
-                alt.Tooltip('production_kw:Q', title='Production (kW)')
-            ]
-        ).properties(
-            title="Noon Production per Site",
-            height=len(site_df) * 25  # Approximately 20 pixels per site row.
-        )
-        
-        st.altair_chart(chart, use_container_width=True)
-    else:
-        st.info("No production data available.")
+    # Sort the DataFrame in place by production_kw in descending order.
+    site_df.sort_values("production_kw", ascending=False, inplace=True)        
+
+    color_scale = alt.Scale(
+        domain=["EN", "SE", "SMA"],
+        range=["orange", "#8B0000", "steelblue"]
+    )
+    
+    chart = alt.Chart(site_df).mark_bar().encode(
+        x=alt.X('production_kw:Q', title='Production (kW)'),
+        y=alt.Y(
+            'name:N', 
+            title='Site Name', 
+            sort=alt.SortField(field='production_kw', order='descending')
+        ),
+        color=alt.Color('vendor_code:N', scale=color_scale, title='Site Type'),
+        tooltip=[
+            alt.Tooltip('name:N', title='Site Name'),
+            alt.Tooltip('production_kw:Q', title='Production (kW)')
+        ]
+    ).properties(
+        title="Noon Production per Site",
+        height=len(site_df) * 25  # Approximately 25 pixels per site row.
+    )        
+    st.altair_chart(chart, use_container_width=True)
+else:
+    st.info("No production data available.")
 
 
     # # Duplicate the x-axis on the top by creating a second x-axis that overlays the original
