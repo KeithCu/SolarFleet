@@ -13,25 +13,25 @@ SessionLocal = sessionmaker(bind=engine)
 
 class Site(Base):
     __tablename__ = "sites"
-    vendor_code = Column(String(3), nullable=False)
     site_id = Column(String, nullable=False)
     name = Column(String, nullable=False)
     url   = Column(String, nullable=False)
+
     history    = Column(String, default="")  # Track alert history
 
-    nearest_vendor_code = Column(String(3), nullable=False)
     nearest_site_id = Column(String, nullable=False)
     nearest_distance = Column(String, nullable=False)
 
     __table_args__ = (
-        PrimaryKeyConstraint('vendor_code', 'site_id'),
+        PrimaryKeyConstraint('site_id'),
     )
 
 class Alert(Base):
     __tablename__ = "alerts"
-    vendor_code = Column(String(3), nullable=False)
     site_id = Column(String, nullable=False)
-    
+    name = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+
     alert_type = Column(String, nullable=False)
     details    = Column(String, nullable=False)
     severity   = Column(Integer, nullable=False)
@@ -40,7 +40,7 @@ class Alert(Base):
     resolved_date   = Column(DateTime, nullable=True)
 
     __table_args__ = (
-        PrimaryKeyConstraint('vendor_code', 'site_id', 'alert_type'),
+        PrimaryKeyConstraint('site_id', 'alert_type'),
     )
     
 class ProductionHistory(Base):
@@ -52,7 +52,6 @@ class ProductionHistory(Base):
 
 class Battery(Base):
     __tablename__ = "batteries"
-    vendor_code = Column(String(3), nullable=False)
     site_id = Column(String, nullable=False)
     serial_number = Column(String, nullable=False)
 
@@ -62,7 +61,7 @@ class Battery(Base):
     last_updated = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
-        PrimaryKeyConstraint('vendor_code', 'site_id', 'serial_number'),
+        PrimaryKeyConstraint('site_id', 'serial_number'),
     )
 
 def init_fleet_db():

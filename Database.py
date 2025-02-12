@@ -8,11 +8,10 @@ from sklearn.neighbors import BallTree
 import SqlModels as Sql
 import SolarPlatform
 
-def add_site_if_not_exists(vendor_code, site_id, name, url, nearest_vendor_code, nearest_site_id, nearest_distance):
+def add_site_if_not_exists(site_id, name, url, nearest_site_id, nearest_distance):
     session = Sql.SessionLocal()
 
     existing_site = session.query(Sql.Site).filter_by(
-        vendor_code=vendor_code,
         site_id=site_id
     ).first()
 
@@ -21,12 +20,10 @@ def add_site_if_not_exists(vendor_code, site_id, name, url, nearest_vendor_code,
         return existing_site
 
     new_site = Sql.Site(
-        vendor_code=vendor_code,
         site_id=site_id,
         name=name,
         url=url,
         history="Notes: ",
-        nearest_vendor_code=nearest_vendor_code,
         nearest_site_id=nearest_site_id,
         nearest_distance=nearest_distance
     )
@@ -36,10 +33,9 @@ def add_site_if_not_exists(vendor_code, site_id, name, url, nearest_vendor_code,
     return new_site
 
 
-def add_alert_if_not_exists(vendor_code, site_id, alert_type, details, severity, first_triggered):
+def add_alert_if_not_exists(site_id, name, url, alert_type, details, severity, first_triggered):
     with Sql.SessionLocal() as session:
         existing_alert = session.query(Sql.Alert).filter(
-            Sql.Alert.vendor_code == vendor_code,
             Sql.Alert.site_id == site_id,
             Sql.Alert.alert_type == alert_type,
             Sql.Alert.resolved_date.is_(None)  # Check for unresolved alerts (i.e., NULL)
@@ -49,8 +45,9 @@ def add_alert_if_not_exists(vendor_code, site_id, alert_type, details, severity,
             now = datetime.utcnow()
             
             new_alert = Sql.Alert(
-                vendor_code = vendor_code,
                 site_id = site_id,
+                name = name,
+                url = url,
                 alert_type = alert_type,
                 details = details,
                 severity = severity,
@@ -60,11 +57,10 @@ def add_alert_if_not_exists(vendor_code, site_id, alert_type, details, severity,
             session.add(new_alert)
             session.commit()
 
-def update_battery_data(vendor_code, site_id, serial_number, model_number, state_of_energy):
+def update_battery_data(site_id, serial_number, model_number, state_of_energy):
     session = Sql.SessionLocal()
     
     existing_battery = session.query(Sql.Battery).filter(
-        Sql.Battery.vendor_code == vendor_code,
         Sql.Battery.site_id == site_id,
         Sql.Battery.serial_number == serial_number
     ).first()
@@ -74,7 +70,6 @@ def update_battery_data(vendor_code, site_id, serial_number, model_number, state
         existing_battery.last_updated = datetime.utcnow()
     else:
         new_battery = Sql.Battery(
-            vendor_code=vendor_code,
             site_id=site_id,
             serial_number=serial_number,
             model_number=model_number,

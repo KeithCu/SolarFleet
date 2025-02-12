@@ -122,10 +122,8 @@ def display_historical_chart(historical_df, site_ids):
     st.altair_chart(chart, use_container_width=True)
 
 
-def filter_and_sort_alerts(alerts_df, vendor_filter, alert_filter, severity_filter, sort_by, ascending):
+def filter_and_sort_alerts(alerts_df, alert_filter, severity_filter, sort_by, ascending):
     filtered_df = alerts_df.copy()
-    if vendor_filter:
-        filtered_df = filtered_df[filtered_df['vendor_code'].isin(vendor_filter)]
     if alert_filter:
         filtered_df = filtered_df[filtered_df['alert_type'].isin(alert_filter)]
     if severity_filter:
@@ -166,14 +164,16 @@ alerts_df = db.fetch_alerts()
 if not alerts_df.empty:
     # Sidebar filters
     st.sidebar.header("Filter Alerts")
-    vendor_filter = st.sidebar.multiselect("Select Vendor(s)", alerts_df['vendor_code'].unique())
     alert_filter = st.sidebar.multiselect("Select Alert Type(s)", alerts_df['alert_type'].unique())
     severity_filter = st.sidebar.multiselect("Select Severity", alerts_df['severity'].unique())
-    sort_by = st.sidebar.selectbox("Sort By", options=["vendor_code", "alert_type", "severity"], index=0)
+    sort_by = st.sidebar.selectbox("Sort By", options=["alert_type", "severity"], index=0)
     ascending = st.sidebar.checkbox("Ascending", value=True)
 
     # Apply filters dynamically on a copy of the alerts dataframe
-    filtered_df = filter_and_sort_alerts(alerts_df, vendor_filter, alert_filter, severity_filter, sort_by, ascending)
+    filtered_df = filter_and_sort_alerts(alerts_df, alert_filter, severity_filter, sort_by, ascending)
+
+    #Snow doesn't require service work so let's just filter it out
+    filtered_df = filtered_df[filtered_df['alert_type'] != 'SNOW_ON_SITE']
 
     # Create multiple views (tabs) from the filtered data
     tab1, tab2, tab3 = st.tabs(["Detailed Alerts", "Alerts Summary", "Alert Cards"])
@@ -181,9 +181,9 @@ if not alerts_df.empty:
     with tab1:
         st.subheader("Detailed Alerts")
         st.dataframe(filtered_df, height=300, column_config={
-            "site_url": st.column_config.LinkColumn(
-                label="site_url",
-                display_text=None
+            "url": st.column_config.LinkColumn(
+                label="Site url",
+                display_text="Link"
             )
         })
 
@@ -264,7 +264,7 @@ if not df.empty:
             ]
         ).properties(
             title="Noon Production per Site",
-            height=len(site_df) * 20  # Approximately 20 pixels per site row.
+            height=len(site_df) * 25  # Approximately 20 pixels per site row.
         )
         
         st.altair_chart(chart, use_container_width=True)

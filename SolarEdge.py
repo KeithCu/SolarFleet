@@ -1,7 +1,8 @@
-import requests
 from typing import List, Dict
 from datetime import datetime, timedelta
+import requests
 import random
+import streamlit as st
 
 import SolarPlatform
 from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
@@ -42,18 +43,18 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return all_sites
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
+    @st.cache_data # In-memory cache
     def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         sites = cls.get_sites_list()
 
         sites_dict = {}
 
         for site in sites:
-            site_id = site.get('siteId')
+            site_id = cls.add_vendorcodeprefix(site.get('siteId'))
             site_url = SOLAREDGE_SITE_URL + str(site_id)
             zipcode = site['location']['zip']
             latitude, longitude = SolarPlatform.get_coordinates(zipcode)
-            site_info = SolarPlatform.SiteInfo(cls.get_vendorcode(), site.get('siteId'), site.get('name'), site_url, zipcode, latitude, longitude)
+            site_info = SolarPlatform.SiteInfo(site_id, site.get('name'), site_url, zipcode, latitude, longitude)
             sites_dict[site_id] = site_info
                 
         return sites_dict
@@ -64,35 +65,13 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         url = f'{SOLAREDGE_BASE_URL}/sites/{site_id}/devices'
         params = {"types": ["BATTERY"]}
         
-        cls.log(f"Fetching site / battery data from SolarEdge API for site {site_id}.")
+        cls.log(f"Fetching site / battery inventory data from SolarEdge API for site {site_id}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
 
         batteries = [device for device in devices if device.get('type') == 'BATTERY']
         return batteries
-
-    @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
-    def get_production(cls, site_id, reference_time):
-        end_time = reference_time + timedelta(minutes=15)
-
-        url = SOLAREDGE_BASE_URL + f'/sites/{site_id}/power'    
-        params = {
-            'from': reference_time.isoformat() + 'Z',
-            'to': end_time.isoformat() + 'Z',
-            'resolution': 'QUARTER_HOUR',
-            'unit': 'KW'
-        }
-        cls.log(f"Fetching production data from SolarEdge API for site {site_id} at {reference_time}.")
-
-        response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
-        response.raise_for_status()
-        power = response.json().get('values', [])
-        
-        latest_value = power[0].get('value', 0)
-        return latest_value
-
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
@@ -118,6 +97,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     def get_batteries_soe(cls, site_id):
+        site_id = cls.strip_vendorcodeprefix(site_id)
+
         batteries = cls.get_batteries(site_id)
         battery_states = []
         
@@ -134,6 +115,29 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return battery_states
 
     @classmethod
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
+    def get_production(cls, site_id, reference_time):
+        site_id = cls.strip_vendorcodeprefix(site_id)
+
+        end_time = reference_time + timedelta(minutes=15)
+
+        url = SOLAREDGE_BASE_URL + f'/sites/{site_id}/power'    
+        params = {
+            'from': reference_time.isoformat() + 'Z',
+            'to': end_time.isoformat() + 'Z',
+            'resolution': 'QUARTER_HOUR',
+            'unit': 'KW'
+        }
+        cls.log(f"Fetching production data from SolarEdge API for site {site_id} at {reference_time}.")
+
+        response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
+        response.raise_for_status()
+        power = response.json().get('values', [])
+        
+        latest_value = power[0].get('value', 0)
+        return latest_value
+
+    @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
     def get_alerts(cls) -> List[SolarPlatform.SolarAlert]:
         url = f'{SOLAREDGE_BASE_URL}/alerts'
@@ -145,7 +149,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             response.raise_for_status()
             alerts = response.json()
             for alert in alerts:
-                a_site_id = alert.get('siteId')
+                a_site_id = cls.add_vendorcodeprefix(alert.get('siteId'))
                 alert_details = ''
                 solarAlert = SolarPlatform.SolarAlert(a_site_id, alert.get('type'), alert.get('impact'), alert_details, alert.get('firstTriggered'))
                 all_alerts.append(solarAlert)

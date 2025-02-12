@@ -11,6 +11,9 @@ import random
 import math
 from datetime import datetime, timedelta, time
 
+#Disk cache decorator to save remote API calls.
+cache = diskcache.Cache(".")
+
 
 @dataclass(frozen=True)
 class BatteryInfo:
@@ -38,7 +41,6 @@ class SolarAlert:
 
 @dataclass(frozen=True)
 class SiteInfo:
-    vendor_code: str
     site_id: str
     name: str
     url: str
@@ -49,18 +51,17 @@ class SiteInfo:
 #In Sqlite, for each day, we store a set of ProductionRecord objects, one for each site.
 @dataclass(frozen=True)
 class ProductionRecord:
-    vendor_code: str
     site_id: str
     production_kw: float
 
     #Two ProductionRecord objects are considered equal if they share the same vendor and site.
     def __hash__(self):
-        return hash((self.vendor_code, self.site_id))
+        return hash((self.site_id))
 
     def __eq__(self, other):
         if not isinstance(other, ProductionRecord):
             return NotImplemented
-        return (self.vendor_code, self.site_id) == (other.vendor_code, other.site_id)
+        return (self.site_id) == (other.site_id)
 
 class SolarPlatform(ABC):
 #    log_container = st.empty()  # A Streamlit container to display log messages
@@ -71,9 +72,9 @@ class SolarPlatform(ABC):
     def get_vendorcode(cls):
         pass
 
-    @classmethod
+    @classmethod 
     @abstractmethod
-    #Returns a map of siteid to SiteInfo objects
+    #Returns a dict of site_id (which contains a vendor code prefix) to SiteInfo objects
     def get_sites_map(cls) -> Dict[str, SiteInfo]:
         pass
 
@@ -94,7 +95,19 @@ class SolarPlatform(ABC):
     #Returns a list of SolarAlerts
     def get_alerts(cls) -> List[SolarAlert]:
         pass
+
+    @classmethod
+    def add_vendorcodeprefix(cls, site_id):
+        return cls.get_vendorcode() + ":" + str(site_id)
     
+    @classmethod
+    def strip_vendorcodeprefix(cls, site_id):
+        if ':' in site_id:
+            site_id_raw = site_id.split(':', 1)[1]
+            return site_id_raw
+        else:
+            return site_id
+
     @classmethod
     def log(cls, message: str, container=None):
         # Use the provided container or the default shared container.
@@ -110,9 +123,6 @@ class SolarPlatform(ABC):
         # Update the shared Streamlit container.
         if container is not None:
             container.text(cls.log_text)
-
-#Disk cache decorator to save API calls.
-cache = diskcache.Cache("/tmp/")  # Persistent cache
 
 CACHE_EXPIRE_HOUR = 3600
 CACHE_EXPIRE_DAY = CACHE_EXPIRE_HOUR * 24
