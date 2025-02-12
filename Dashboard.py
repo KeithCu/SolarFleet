@@ -159,57 +159,90 @@ st.markdown("---")
 st.header("🚨 Active Alerts")
 
 alerts_df = db.fetch_alerts()
+# Retrieve site history from the database
+sites_history_df = db.fetch_sites()[["site_id", "history"]]
 
 if not alerts_df.empty:
-    #Snow doesn't require service work so let's just filter it out
+    # Filter out unwanted alert types
     alerts_df = alerts_df[alerts_df['alert_type'] != 'SNOW_ON_SITE']
 
+    # --- Site Production failure ---
     st.header("Site Production failure")
-
     production_df = alerts_df[alerts_df['alert_type'] == 'INVERTER_BELOW_THRESHOLD_LIMIT']
-    st.dataframe(production_df, column_config={
-        "url": st.column_config.LinkColumn(
-            label="Site url",
-            display_text="Link"
-        )
-    })
-
-    #Filter out what we just displayed
+    production_df = production_df.merge(sites_history_df, on="site_id", how="left")
+    edited_production_df = st.data_editor(
+        production_df,
+        key="production_production",
+        column_config={
+            "url": st.column_config.LinkColumn(
+                label="Site url",
+                display_text="Link"
+            )
+        }
+    )
+    if st.button("Save Production Site History Updates", key="save_prod_history"):
+        for _, row in edited_production_df.iterrows():
+            db.update_site_history(row['site_id'], row['history'])
     alerts_df = alerts_df[alerts_df['alert_type'] != 'INVERTER_BELOW_THRESHOLD_LIMIT']
 
+    # --- Site Communication failure ---
     st.header("Site Communication failure")
-
     comms_df = alerts_df[alerts_df['alert_type'] == 'SITE_COMMUNICATION_FAULT']
-    st.dataframe(comms_df, column_config={
-        "url": st.column_config.LinkColumn(
-            label="Site url",
-            display_text="Link"
-        )
-    })
+    comms_df = comms_df.merge(sites_history_df, on="site_id", how="left")
+    edited_comms_df = st.data_editor(
+        comms_df,
+        key="comms_editor",
+        column_config={
+            "url": st.column_config.LinkColumn(
+                label="Site url",
+                display_text="Link"
+            )
+        }
+    )
+    if st.button("Save Communication Site History Updates", key="save_comms_history"):
+        for _, row in edited_comms_df.iterrows():
+            db.update_site_history(row['site_id'], row['history'])
     alerts_df = alerts_df[alerts_df['alert_type'] != 'SITE_COMMUNICATION_FAULT']
 
+    # --- Panel-level failures ---
     st.header("Panel-level failures")
-
     panel_df = alerts_df[alerts_df['alert_type'] == 'PANEL_COMMUNICATION_FAULT']
-    st.dataframe(panel_df, column_config={
-        "url": st.column_config.LinkColumn(
-            label="Site url",
-            display_text="Link"
-        )
-    })
+    panel_df = panel_df.merge(sites_history_df, on="site_id", how="left")
+    edited_panel_df = st.data_editor(
+        panel_df,
+        key="panel_editor",
+        column_config={
+            "url": st.column_config.LinkColumn(
+                label="Site url",
+                display_text="Link"
+            )
+        }
+    )
+    if st.button("Save Panel Site History Updates", key="save_panel_history"):
+        for _, row in edited_panel_df.iterrows():
+            db.update_site_history(row['site_id'], row['history'])
     alerts_df = alerts_df[alerts_df['alert_type'] != 'PANEL_COMMUNICATION_FAULT']
 
+    # --- System Configuration failure ---
     st.header("System Configuration failure")
-
-    st.dataframe(alerts_df, column_config={
-        "url": st.column_config.LinkColumn(
-            label="Site url",
-            display_text="Link"
-        )
-    })
+    sysconf_df = alerts_df.copy()
+    sysconf_df = sysconf_df.merge(sites_history_df, on="site_id", how="left")
+    edited_sysconf_df = st.data_editor(
+        sysconf_df,
+        key="sysconf_editor",
+        column_config={
+            "url": st.column_config.LinkColumn(
+                label="Site url",
+                display_text="Link"
+            )
+        }
+    )
+    if st.button("Save System Config Site History Updates", key="save_sysconf_history"):
+        for _, row in edited_sysconf_df.iterrows():
+            db.update_site_history(row['site_id'], row['history'])
 else:
     st.success("No active alerts.")
-    
+        
 st.header("🔋 Batteries Below 10%")
 low_batteries_df = db.fetch_low_batteries()
 if not low_batteries_df.empty:

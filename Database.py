@@ -32,6 +32,26 @@ def add_site_if_not_exists(site_id, name, url, nearest_site_id, nearest_distance
     session.close()
     return new_site
 
+def fetch_sites():
+    session = Sql.SessionLocal()
+    try:
+        sites_df = pd.read_sql(session.query(Sql.Site).statement, session.bind)
+        return sites_df
+    finally:
+        session.close()
+
+def update_site_history(site_id, new_history):
+    session = Sql.SessionLocal()
+    try:
+        site = session.query(Sql.Site).filter_by(site_id=site_id).first()
+        if site:
+            site.history = new_history
+            session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
 
 def add_alert_if_not_exists(site_id, name, url, alert_type, details, severity, first_triggered):
     with Sql.SessionLocal() as session:
