@@ -139,14 +139,12 @@ def disk_cache(expiration_seconds):
     def decorator(func):
         def wrapper(*args, **kwargs):
             cache_key = f"{func.__name__}_{args}_{kwargs}"
-            
-            if cache_key in cache:
-                return cache[cache_key]  # Return cached value
-
-            result = func(*args, **kwargs)
-            cache.set(cache_key, result, expire=expiration_seconds)  # Store result with expiration
-            return result
-        
+            try:
+                return cache[cache_key]
+            except KeyError:
+                result = func(*args, **kwargs)
+                cache.set(cache_key, result, expire=expiration_seconds)
+                return result
         return wrapper
     return decorator
 
