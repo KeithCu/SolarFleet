@@ -16,6 +16,7 @@ def add_site_if_not_exists(vendor_code, site_id, name, url, nearest_vendor_code,
     ).first()
 
     if existing_site:
+        session.close()
         return existing_site
 
     # Create a new Site instance if one doesn't exist.
@@ -31,6 +32,7 @@ def add_site_if_not_exists(vendor_code, site_id, name, url, nearest_vendor_code,
     )
     session.add(new_site)
     session.commit()
+    session.close()
     return new_site
 
 
@@ -111,8 +113,8 @@ def fetch_all_batteries():
 
 def get_production_by_day(production_day: date) -> set:
     session = Sql.SessionLocal()
-    try:
-        record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
+    try:                #fixme: .filter_by(production_day=production_day)
+        record = session.query(Sql.ProductionHistory).first()
         if record:
             # Ensure that the data is returned as a set.
             return record.data if isinstance(record.data, set) else set(record.data)
@@ -120,27 +122,30 @@ def get_production_by_day(production_day: date) -> set:
     finally:
         session.close()
 
-def insert_or_update_production_set(vendor_code, new_data, production_day):
+def insert_or_update_production_set(new_data: set[SolarPlatform.SiteProduction], production_day):
     session = Sql.SessionLocal()
     try:
-        record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
-        if record:
-            # Ensure we have a set; if it’s stored as something else, coerce it.
-            prod_set = record.data if isinstance(record.data, set) else set(record.data)
-        else:
-            prod_set = set()
+        # Retrieve the existing record by primary key using session.get()
+        existing = session.get(Sql.ProductionHistory, production_day)
 
-        for site_id, production in new_data.items():
-            new_record = SolarPlatform.ProductionRecord(vendor_code, site_id, production)
-            prod_set.add(new_record)
-
-        if record:
-            record.data = prod_set
+        if existing:
+            # Coerce the existing data to a set if needed and merge it with the new data.
+            combined_set = (existing.data if isinstance(existing.data, set)
+                            else set(existing.data))
+            combined_set.update(new_data)
         else:
-            record = SolarPlatform.ProductionHistory(production_day=production_day, data=prod_set)
-            session.add(record)
+            # If no record exists, use a copy of new_data.
+            combined_set = new_data.copy()
+
+        # Create a fresh instance with the merged data.
+        new_record = Sql.ProductionHistory(production_day=production_day, data=combined_set)
+
+        # session.merge() will check if a record with the given primary key exists;
+        # if so, it will update that record with new_record’s state, otherwise it will add a new record.
+        merged_record = session.merge(new_record)
+
         session.commit()
-        return record
+        return merged_record
     except Exception as e:
         session.rollback()
         raise e
@@ -167,129 +172,49 @@ def insert_or_update_production_set(vendor_code, new_data, production_day):
 #      (with the haversine metric) to compute for each new site the nearest neighbor’s vendor_code,
 #      site_id, and distance (in miles). These values are stored in the new record.
 
-def process_bulk_solar_production(
-    production_data: list[SolarPlatform.SolarProduction], 
-    recalibrate: bool = False, 
-    sunny_threshold: float = 100.0
-):
 
-    session = Sql.SessionLocal()
+    # # If there are new records, build a BallTree over the combined dataset.
+    # if new_to_insert:
+    #     coords = np.array([[r["lat"], r["lon"]] for r in combined])
+    #     coords_rad = np.radians(coords)
+    #     tree = BallTree(coords_rad, metric='haversine')
+    #     keys = [(r["vendor_code"], r["site_id"]) for r in combined]
+        
+    #     # For each new record, compute the nearest neighbor.
+    #     for rec in new_to_insert:
+    #         new_key = (rec["vendor_code"], rec["site_id"])
+    #         query_point = np.radians(np.array([[rec["lat"], rec["lon"]]]))
+    #         dist_rad, ind = tree.query(query_point, k=2)
+    #         # If the closest neighbor is itself, take the second closest.
+    #         if keys[ind[0][0]] == new_key and len(ind[0]) > 1:
+    #             nearest_idx = ind[0][1]
+    #             distance_miles = dist_rad[0][1] * 3958.8
+    #         else:
+    #             nearest_idx = ind[0][0]
+    #             distance_miles = dist_rad[0][0] * 3958.8
+    #         rec["nearest_vendor_code"] = keys[nearest_idx][0]
+    #         rec["nearest_site_id"] = keys[nearest_idx][1]
+    #         rec["nearest_distance"] = int(round(distance_miles))
+
+
+def process_bulk_solar_production(
+    reference_date: date,
+    production_data: set[SolarPlatform.SiteProduction], 
+    recalibrate: bool = False, 
+    sunny_threshold: float = 100.0):
 
     if not production_data:
         print("No production data provided.")
         return
 
     # Compute average production for sanity check.
-    avg_prod = sum(prod.site_production for prod in production_data) / len(production_data)
+    avg_prod = sum(prod.production_kw for prod in production_data) / len(production_data)
     if avg_prod < sunny_threshold and not recalibrate:
         raise ValueError(
             f"Average production ({avg_prod:.2f}) is below the sunny threshold ({sunny_threshold}). "
             "Data rejected to prevent calibration on a cloudy day."
         )
     
-    # For these solar entries, use a default vendor_code (or derive it as needed).
-    default_vendor_code = "SOL"
+    insert_or_update_production_set(production_data, reference_date)
 
-    # Convert SolarProduction objects to dictionaries suitable for our Production model.
-    new_records = []
-    for prod in production_data:
-        new_records.append({
-            "vendor_code": default_vendor_code,
-            "site_id": prod.site_id,
-            "zip_code": str(prod.site_zipcode),
-            "noon_production": prod.site_production,
-            "site_url": prod.site_url
-        })
-    
-    # Query existing Production entries.
-    existing_entries = session.query(Sql.Production).all()
-    existing_dict = {(rec.vendor_code, rec.site_id): rec for rec in existing_entries}
-    
-    # Build a combined dataset (existing + new) with computed coordinates.
-    combined = []
-    # Process existing records.
-    for rec in existing_entries:
-        lat, lon = SolarPlatform.get_coordinates(rec.zip_code)
-        if lat is None:
-            continue
-        combined.append({
-            "vendor_code": rec.vendor_code,
-            "site_id": rec.site_id,
-            "zip_code": rec.zip_code,
-            "lat": lat,
-            "lon": lon,
-            "noon_production": rec.noon_production,
-            "site_url": rec.site_url
-        })
-    
-    # Process new records.
-    new_to_insert = []
-    for rec in new_records:
-        key = (rec["vendor_code"], rec["site_id"])
-        if key in existing_dict:
-            # Update the existing record (avoid recalculation).
-            existing = existing_dict[key]
-            existing.noon_production = rec["noon_production"]
-            existing.last_updated = datetime.utcnow()
-            session.commit()
-            # Add to combined dataset.
-            lat, lon = SolarPlatform.get_coordinates(rec["zip_code"])
-            if lat is not None:
-                combined.append({
-                    "vendor_code": existing.vendor_code,
-                    "site_id": existing.site_id,
-                    "zip_code": existing.zip_code,
-                    "lat": lat,
-                    "lon": lon,
-                    "noon_production": existing.noon_production,
-                    "site_url": existing.site_url
-                })
-        else:
-            # New record: compute its coordinates.
-            lat, lon = SolarPlatform.get_coordinates(rec["zip_code"])
-            if lat is None:
-                continue
-            rec["lat"] = lat
-            rec["lon"] = lon
-            new_to_insert.append(rec)
-            combined.append(rec)
-    
-    # If there are new records, build a BallTree over the combined dataset.
-    if new_to_insert:
-        coords = np.array([[r["lat"], r["lon"]] for r in combined])
-        coords_rad = np.radians(coords)
-        tree = BallTree(coords_rad, metric='haversine')
-        keys = [(r["vendor_code"], r["site_id"]) for r in combined]
-        
-        # For each new record, compute the nearest neighbor.
-        for rec in new_to_insert:
-            new_key = (rec["vendor_code"], rec["site_id"])
-            query_point = np.radians(np.array([[rec["lat"], rec["lon"]]]))
-            dist_rad, ind = tree.query(query_point, k=2)
-            # If the closest neighbor is itself, take the second closest.
-            if keys[ind[0][0]] == new_key and len(ind[0]) > 1:
-                nearest_idx = ind[0][1]
-                distance_miles = dist_rad[0][1] * 3958.8
-            else:
-                nearest_idx = ind[0][0]
-                distance_miles = dist_rad[0][0] * 3958.8
-            rec["nearest_vendor_code"] = keys[nearest_idx][0]
-            rec["nearest_site_id"] = keys[nearest_idx][1]
-            rec["nearest_distance"] = int(round(distance_miles))
-    
-    # Bulk insert new records.
-    for rec in new_to_insert:
-        new_entry = Sql.Production(
-            vendor_code=rec["vendor_code"],
-            site_id=rec["site_id"],
-            zip_code=rec["zip_code"],
-            noon_production=rec["noon_production"],
-            site_url=rec["site_url"],
-            nearest_vendor_code=rec.get("nearest_vendor_code", rec["vendor_code"]),
-            nearest_site_id=rec.get("nearest_site_id", rec["site_id"]),
-            nearest_distance=rec.get("nearest_distance", 0),
-            last_updated=datetime.utcnow()
-        )
-        session.add(new_entry)
-    session.commit()
-    print(f"Processed {len(new_records)} records. Average production: {avg_prod:.2f}")
+    print(f"Processed {len(production_data)} records. Average production: {avg_prod:.2f}")

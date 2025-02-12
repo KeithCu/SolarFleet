@@ -62,6 +62,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         url = f'{SOLAREDGE_BASE_URL}/sites/{site_id}/devices'
         params = {"types": ["BATTERY"]}
         
+        cls.log(f"Fetching site / battery data from SolarEdge API for site {site_id}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
@@ -70,7 +71,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return batteries
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
     def get_production(cls, site_id, reference_time):
         end_time = reference_time + timedelta(minutes=15)
 
@@ -79,22 +80,23 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             'from': reference_time.isoformat() + 'Z',
             'to': end_time.isoformat() + 'Z',
             'resolution': 'QUARTER_HOUR',
-            'unit': 'PERCENTAGE'
+            'unit': 'KW'
         }
-        
+        cls.log(f"Fetching production data from SolarEdge API for site {site_id} at {reference_time}.")
+
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         power = response.json().get('values', [])
         
-        latest_value = next((entry['value'] for entry in reversed(power) if entry['value'] is not None), None)
+        latest_value = power[0].get('value', 0)
         return latest_value
 
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
     def get_battery_state_of_energy(cls, site_id, serial_number):
-        end_time = datetime.utcnow()
-        start_time = end_time - timedelta(minutes=15)
+        start_time = datetime.utcnow()
+        end_time = start_time + timedelta(minutes=15)
         
         url = f'{SOLAREDGE_BASE_URL}/sites/{site_id}/storage/{serial_number}/state-of-energy'
         params = {
@@ -104,6 +106,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             'unit': 'PERCENTAGE'
         }
         
+        cls.log(f"Fetching battery State of Energy from SolarEdge API for site {site_id} and battery {serial_number}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         soe_data = response.json().get('values', [])
@@ -149,39 +152,3 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         except requests.exceptions.RequestException as e:
             print(f"Failed to retrieve SolarEdge alerts: {e}")
             return []
-        
-def main():
-    platform = SolarEdgePlatform()
-
-    platform.log("Testing get_sites_map() API call...")
-    try:
-        sites = platform.get_sites_map()
-        if sites:
-            platform.log("Retrieved Sites:")
-            for site_id in sites.keys():
-                pass
-                
-                #battery_data = platform.get_batteries_soe(site_id)
-                #platform.log(f"Site {site_id} Battery Data: {battery_data}")
-        else:
-            platform.log("No sites found.")
-            return  # Nothing to test if no sites are found.
-    except Exception as e:
-        platform.log(f"Error while fetching sites: {e}")
-        return
-
-    #Fetch all SolarEdge alerts
-    platform.log("\nFetching alerts for all sites")
-    try:
-        alerts = platform.get_alerts()
-        if alerts is not None:
-            for alert in alerts:
-                platform.log("Retrieved Alerts:")
-                platform.log(f"  Alert ID: {alert}")
-        else:
-            platform.log("No alerts found for this site.")
-    except Exception as e:
-        platform.log(f"Error while fetching alerts for site {site_id}: {e}")
-
-if __name__ == "__main__":
-    main()

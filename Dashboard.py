@@ -7,7 +7,7 @@ import plotly.express as px
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
-from streamlit_folium import folium_static
+from streamlit_folium import st_folium
 import SolarPlatform
 import SqlModels as Sql
 import Database as db
@@ -46,10 +46,10 @@ def create_map_view(sites_df):
     # Iterate over the DataFrame and add markers
     for _, row in sites_df.iterrows():
         # Change icon color if production is zero (i.e., potential issue)
-        color = "#FF0000" if row['power'] == 0 else "#2A81CB"
+        color = "#FF0000" if row['production_kw'] == 0 else "#2A81CB"
         popup_html = (
-            f"<strong>{row['site_name']} ({row['site_id']})</strong><br>"
-            f"Production: {row['power']} W"
+            f"<strong>{row['name']} ({row['site_id']})</strong><br>"
+            f"Production: {row['production_kw']} W"
         )
         folium.Marker(
             location=[row['latitude'], row['longitude']],
@@ -67,12 +67,12 @@ def create_map_view(sites_df):
                         color: white;
                         border: 2px solid #fff;
                         font-weight: bold;">
-                        {row['power']}
+                        {row['production_kw']}
                     </div>
                 """
             )
         ).add_to(m)
-    folium_static(m)
+    st_folium(m)
 
 def display_historical_chart(historical_df, site_ids):
     if not site_ids:
@@ -82,7 +82,7 @@ def display_historical_chart(historical_df, site_ids):
         site_data = historical_df[historical_df['site_id'].isin(site_ids)]
     
     # Aggregate the production by date (summing the production values)
-    agg_data = site_data.groupby("date", as_index=False)["power"].sum()
+    agg_data = site_data.groupby("date", as_index=False)["production_kw"].sum()
     
     # Create a thick line by specifying the size parameter in mark_line.
     chart = alt.Chart(agg_data).mark_line(size=5).encode(
@@ -119,14 +119,16 @@ def get_site_coordinates(sites):
         if isinstance(zipcode, pd.Series):
             zipcode = zipcode.iloc[0]  # Ensure it's a single value
         lat, lon = SolarPlatform.get_coordinates(zipcode)
+        if lat is None or lon is None:
+            lat, lon = SolarPlatform.get_coordinates(48071)
+
         if lat and lon:
             site_data.append({
                 "site_id": site_id,
-                 "site_name": site_info.name,
+                 "name": site_info.name,
                 "latitude": lat,
                 "longitude": lon,
-                "zipcode": zipcode,
-                "power": 0
+#                "zipcode": zipcode,
             })
     return pd.DataFrame(site_data)
 
@@ -134,6 +136,9 @@ def display_map_with_production():
     platform = SolarEdgePlatform()
     sites = platform.get_sites_map()
     site_df = get_site_coordinates(sites)
+
+    #Remove the duplicate columns
+    site_df = site_df.drop(columns=['latitude', 'longitude', 'zipcode', 'name'], errors='ignore')
 
     # Fetch production data
     production_data = db.get_production_by_day(SolarPlatform.get_recent_noon())

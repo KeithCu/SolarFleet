@@ -24,10 +24,14 @@ from SolarEdge import SolarEdgePlatform
 def collect_platform(platform):
     sites = None
     platform.log("Testing get_sites_map() API call...")
+    production_set = set()
+    reference_date = SolarPlatform.get_recent_noon()
+
     try:
         sites = platform.get_sites_map()
         for site_id in sites.keys():
             site = sites[site_id]
+            latitude, longitude = SolarPlatform.get_coordinates(sites[site_id].zipcode)
 
             #This needs to be moved to later when we have the nearest site information
             db.add_site_if_not_exists(platform.get_vendorcode(), site_id, sites[site_id].name, site.url, "nearest_vendorcode", "nearest_siteid", "nearest_distance")
@@ -37,22 +41,26 @@ def collect_platform(platform):
                 db.update_battery_data(platform.get_vendorcode(), site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'])
                 platform.log(f"Site {site_id} Battery Data: {battery_data}")
 
+            # Fetch production data and put into set
+            site_production = platform.get_production(site_id, reference_date)
 
+            if site_production is not None:
+                new_production = SolarPlatform.SiteProduction(
+                    vendor_code=platform.get_vendorcode(),
+                    site_id=site_id,
+                    name=sites[site_id].name,
+                    url=sites[site_id].url,
+                    zipcode=sites[site_id].zipcode,
+                    latitude=latitude,
+                    longitude=longitude,
+                    production_kw=site_production,     
+                )
+                production_set.add(new_production)
+                platform.log(f"Site {site_id} Production Data: {site_production} kW")
 
-            # if not existing_production:
-            #     # Fetch production data
-            #     reference_time = datetime.utcnow()
-            #     production = platform.get_production(site_id, reference_time)
-            #     if production is not None:
-            #         new_production = SolarPlatform.SolarProduction(
-            #             site_id=site_id,
-            #             site_name=sites[site_id].name,
-            #             site_zipcode=sites[site_id].zipcode,
-            #             site_production=production,
-            #             site_url=sites[site_id].url
-            #         )
-            #         db.process_bulk_solar_production([new_production])
-            #         platform.log(f"Site {site_id} Production Data: {production} kW")
+        # Add production data to database
+        db.process_bulk_solar_production(reference_date, production_set, False, 3.0)
+
     except Exception as e:
         platform.log(f"Error while fetching sites: {e}")
         return

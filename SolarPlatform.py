@@ -11,14 +11,14 @@ import random
 import math
 from datetime import datetime, timedelta, time
 
-@dataclass
+@dataclass(frozen=True)
 class SiteInfo:
     site_id: str
     name: str
     url: str
     zipcode: str
 
-@dataclass
+@dataclass(frozen=True)
 class BatteryInfo:
     serial_number: str
     model_name: str
@@ -30,7 +30,7 @@ class AlertType:
     HARDWARE_ERROR = "HARDWARE_ERROR"
     MLPE_ERROR = "MLPE_ERROR"
 
-@dataclass
+@dataclass(frozen=True)
 class SolarAlert:
     site_id: str
     alert_type: str
@@ -42,17 +42,24 @@ class SolarAlert:
         if not (0 <= self.severity <= 100):
             raise ValueError("Severity must be between 0 and 100.")
 
-#In memory production information
-@dataclass
-class SolarProduction:
+#In-memory production information, used for dashboard
+@dataclass(frozen=True)
+class SiteProduction:
+    vendor_code: str
     site_id: str
-    site_name: str
-    site_zipcode: int
-    site_production: float
-    site_url: str
+
+    name: str
+    url: str
+
+    zipcode: int
+    latitude: float
+    longitude: float
+
+    production_kw : float
+
 
 #In Sqlite, for each day, we store a set of ProductionRecord objects, one for each site.
-@dataclass
+@dataclass(frozen=True)
 class ProductionRecord:
     vendor_code: str
     site_id: str
@@ -147,7 +154,7 @@ def disk_cache(expiration_seconds):
 
 from datetime import datetime, timedelta, time
 
-#FIXME, hard codes Eastern timezone for now
+#FIXME, harding codes Eastern timezone for now
 
 def get_recent_noon() -> datetime:
 
@@ -163,8 +170,8 @@ def get_recent_noon() -> datetime:
     else:
         measurement_date = today - timedelta(days=1)
     
-    # Create a datetime for noon (12:00) on the chosen date in Eastern Time.
-    measurement_dt = datetime.combine(measurement_date, time(12, 0), tzinfo=eastern)
+    # Create a datetime for noon (5:00) on the chosen date in UTC.
+    measurement_dt = datetime.combine(measurement_date, time(17, 0, 0, 0))
     return measurement_dt
 
 import pgeocode
@@ -179,13 +186,14 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.asin(math.sqrt(a))
     return c * 3958.8  # Earth radius in miles
 
+@st.cache_data
 def get_coordinates(zip_code):
     try:
         result = nomi.query_postal_code(zip_code)
         if result is None or math.isnan(result.latitude) or math.isnan(result.longitude):
             print(f"Failed to get coordinates for zip code: {zip_code}")
-            return None, None
+            result = nomi.query_postal_code(48071)
         return result.latitude, result.longitude
     except Exception as e:
-        print(f"Error getting coordinates for zip code {zip_code}: {e}")
-        return None, None
+        print(f"Failed to get coordinates for zip code: {zip_code}")
+        return 42.5, -83.1
