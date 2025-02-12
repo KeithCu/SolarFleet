@@ -15,6 +15,7 @@ from FleetCollector import collect_platform, run_collection
 from SolarEdge import SolarEdgePlatform
 import altair as alt
 
+from api_keys import STREAMLIT_PASSWORD
 
 def send_browser_notification(title, message):
     js_code = f"""
@@ -140,7 +141,7 @@ def login():
     # When the login button is clicked, validate the password
     if st.button("Login"):
         # Replace 'my_secret_password' with your actual password
-        if password == "Absolute1431":
+        if password == STREAMLIT_PASSWORD:
             st.session_state.authenticated = True
             st.success("Logged in successfully!")
         else:
