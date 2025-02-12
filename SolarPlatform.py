@@ -195,5 +195,5 @@ def get_coordinates(zip_code):
             result = nomi.query_postal_code(48071)
         return result.latitude, result.longitude
     except Exception as e:
-        print(f"Failed to get coordinates for zip code: {zip_code}")
+        print(f"Exception thrown trying to get coordinates for zip code: {zip_code}")
         return 42.5, -83.1

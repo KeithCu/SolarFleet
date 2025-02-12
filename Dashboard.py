@@ -38,26 +38,37 @@ def create_map_view(sites_df):
     The icon background color is red if there is no production (power == 0),
     otherwise it remains blue.
     """
-    # Center the map at the average location of all sites
+    import numpy as np
+    import folium
+    from streamlit_folium import st_folium
+
+    # Center the map at the average location of all sites (initially)
     avg_lat = sites_df['latitude'].mean()
     avg_lon = sites_df['longitude'].mean()
     m = folium.Map(location=[avg_lat, avg_lon], zoom_start=5)
-
+    
+    # Create a list to collect marker coordinates
+    marker_coords = []
+    
     # Iterate over the DataFrame and add markers
     for _, row in sites_df.iterrows():
-        # Change icon color if production is zero (i.e., potential issue)
+        lat = row['latitude']
+        lon = row['longitude']
+        # Check for invalid coordinates
+        if np.isnan(lat) or np.isnan(lon):
+            print("bug!")
+            lat, lon = 43.0, -38.1  # fallback coordinates
+
+        marker_coords.append([lat, lon])
+        
         color = "#FF0000" if row['production_kw'] == 0 else "#2A81CB"
         popup_html = (
             f"<strong>{row['name']} ({row['site_id']})</strong><br>"
             f"Production: {row['production_kw']} W"
         )
-        location=[row['latitude'], row['longitude']]
-        if np.isnan(row['latitude']) or np.isnan(row['longitude']):
-            print("bug!")
-            location = [43.0, -38.1]
-            
+        
         folium.Marker(
-            location=location,
+            location=[lat, lon],
             popup=folium.Popup(popup_html, max_width=300),
             icon=folium.DivIcon(
                 html=f"""
@@ -77,6 +88,11 @@ def create_map_view(sites_df):
                 """
             )
         ).add_to(m)
+    
+    # Adjust the map view to the bounds of the markers
+    if marker_coords:
+        m.fit_bounds(marker_coords)
+    
     st_folium(m)
 
 def display_historical_chart(historical_df, site_ids):
@@ -133,22 +149,6 @@ def get_site_coordinates(sites):
             })
     return pd.DataFrame(site_data)
 
-def display_map_with_production():
-    platform = SolarEdgePlatform()
-    sites = platform.get_sites_map()
-    site_df = get_site_coordinates(sites)
-
-    #Remove the duplicate columns
-    site_df = site_df.drop(columns=['latitude', 'longitude', 'zipcode', 'name'], errors='ignore')
-
-    # Fetch production data
-    production_data = db.get_production_by_day(SolarPlatform.get_recent_noon())
-    df = pd.DataFrame([asdict(record) for record in production_data])
-
-    if not df.empty:
-        site_df = site_df.merge(df, on="site_id", how="left")
-
-    create_map_view(site_df)
 
 # Streamlit UI
 # Setup page and initialize DB
@@ -229,45 +229,64 @@ st.header("🌍 Site Map with Production Data")
 production_set = db.get_production_by_day(SolarPlatform.get_recent_noon())
 production_data = pd.DataFrame([asdict(record) for record in production_set])
 
-display_map_with_production()
+#FIXME, not 100% correct yet
+platform = SolarEdgePlatform()
+sites = platform.get_sites_map()
+site_df = get_site_coordinates(sites)
 
-if not production_data.empty:
-    # Create a DataFrame with the production data and sort for a cleaner look
-    df = production_data.sort_values("production_kw", ascending=True)
+#Remove the duplicate columns
+site_df = site_df.drop(columns=['latitude', 'longitude', 'zipcode', 'name'], errors='ignore')
 
-    # Streamlit dashboard header
-    st.title("Fleet Production at Noon")
+# Fetch production data
+production_data = db.get_production_by_day(SolarPlatform.get_recent_noon())
+df = pd.DataFrame([asdict(record) for record in production_data])
 
-    # Create a horizontal bar chart using Plotly Express
-    fig = px.bar(
-        df,
-        x="production_kw",
-        y="site_id",
-        orientation='h',  # Horizontal bars so that site names are on the y-axis
+if not df.empty:
+    site_df = site_df.merge(df, on="site_id", how="left")
+
+create_map_view(site_df)
+
+if not site_df.empty:
+    # Sort the DataFrame in place by production_kw in descending order.
+    site_df.sort_values("production_kw", ascending=False, inplace=True)
+        
+    # Debug: Print production values to verify sort order.
+    # for value in site_df['production_kw']:
+    #     print(value)
+    
+    # Build the horizontal bar chart.
+    # The y-axis is sorted by production_kw in descending order so that
+    # the highest production value appears at the top.
+    chart = alt.Chart(site_df).mark_bar().encode(
+        x=alt.X('production_kw:Q', title='Production (kW)'),
+        y=alt.Y(
+            'name:N', 
+            title='Site Name', 
+            sort=alt.SortField(field='production_kw', order='descending')
+        ),
+        tooltip=[
+            alt.Tooltip('name:N', title='Site Name'),
+            alt.Tooltip('production_kw:Q', title='Production (kW)')
+        ]
+    ).properties(
         title="Noon Production per Site",
-        labels={"production_kw": "Production (kW)", "site_id": "Site ID"}
+        height=len(site_df) * 20  # Approximately 20 pixels per site row.
     )
-
-    # Adjust the layout to be tall enough for all site names.
-    # For example, allocate roughly 20 pixels per site.
-    fig.update_layout(
-        height=len(df) * 20,
-        margin=dict(l=150, r=50, t=50, b=50)
-    )
-
-    # Duplicate the x-axis on the top by creating a second x-axis that overlays the original
-    fig.update_layout(
-        # The original x-axis remains with its title at the bottom.
-        # Now, define a second x-axis (xaxis2) that overlays x and is positioned at the top.
-        xaxis2=dict(
-            side='top',
-            overlaying='x',  # This makes xaxis2 share the same domain as x
-            showgrid=False,  # Optionally, disable grid lines for clarity
-            title=dict(text="Production (kW)")
-        )
-    )
-    # Display the chart in Streamlit
-    st.plotly_chart(fig, use_container_width=True)
+    
+    st.altair_chart(chart, use_container_width=True)
 else:
     st.info("No production data available.")
 
+
+    # # Duplicate the x-axis on the top by creating a second x-axis that overlays the original
+    # fig.update_layout(
+    #     # The original x-axis remains with its title at the bottom.
+    #     # Now, define a second x-axis (xaxis2) that overlays x and is positioned at the top.
+    #     xaxis2=dict(
+    #         side='top',
+    #         overlaying='x',  # This makes xaxis2 share the same domain as x
+    #         showgrid=False,  # Optionally, disable grid lines for clarity
+    #         title=dict(text="Production (kW)")
+    #     )
+    # )
+    # Display the chart in Streamlit
