@@ -140,7 +140,6 @@ def login():
     
     # When the login button is clicked, validate the password
     if st.button("Login"):
-        # Replace 'my_secret_password' with your actual password
         if password == STREAMLIT_PASSWORD:
             st.session_state.authenticated = True
             st.success("Logged in successfully!")

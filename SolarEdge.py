@@ -61,11 +61,11 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_MONTH())
-    def get_batteries(cls, site_id):
-        url = f'{SOLAREDGE_BASE_URL}/sites/{site_id}/devices'
+    def get_batteries(cls, raw_site_id):
+        url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/devices'
         params = {"types": ["BATTERY"]}
         
-        cls.log(f"Fetching site / battery inventory data from SolarEdge API for site {site_id}.")
+        cls.log(f"Fetching site / battery inventory data from SolarEdge API for site {raw_site_id}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
@@ -75,11 +75,11 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
-    def get_battery_state_of_energy(cls, site_id, serial_number):
+    def get_battery_state_of_energy(cls, raw_site_id, serial_number):
         start_time = datetime.utcnow()
         end_time = start_time + timedelta(minutes=15)
         
-        url = f'{SOLAREDGE_BASE_URL}/sites/{site_id}/storage/{serial_number}/state-of-energy'
+        url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/storage/{serial_number}/state-of-energy'
         params = {
             'from': start_time.isoformat() + 'Z',
             'to': end_time.isoformat() + 'Z',
@@ -87,7 +87,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             'unit': 'PERCENTAGE'
         }
         
-        cls.log(f"Fetching battery State of Energy from SolarEdge API for site {site_id} and battery {serial_number}.")
+        cls.log(f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         soe_data = response.json().get('values', [])
@@ -97,14 +97,14 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     def get_batteries_soe(cls, site_id):
-        site_id = cls.strip_vendorcodeprefix(site_id)
+        raw_site_id = cls.strip_vendorcodeprefix(site_id)
 
-        batteries = cls.get_batteries(site_id)
+        batteries = cls.get_batteries(raw_site_id)
         battery_states = []
         
         for battery in batteries:
             serial_number = battery.get('serialNumber')
-            soe = cls.get_battery_state_of_energy(site_id, serial_number)
+            soe = cls.get_battery_state_of_energy(raw_site_id, serial_number)
             
             battery_states.append({
                 'serialNumber': serial_number,
