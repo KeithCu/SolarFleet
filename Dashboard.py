@@ -95,7 +95,6 @@ def create_map_view(sites_df):
             )
         ).add_to(m)
     
-    # Adjust the map view to the bounds of the markers, if any were added.
     if marker_coords:
         m.fit_bounds(marker_coords)
     
@@ -103,7 +102,6 @@ def create_map_view(sites_df):
 
 def display_historical_chart(historical_df, site_ids):
     if not site_ids:
-        # If no sites are selected, default to all sites.
         site_data = historical_df.copy()
     else:
         site_data = historical_df[historical_df['site_id'].isin(site_ids)]
@@ -159,53 +157,56 @@ if st.button("Run Collection"):
 st.markdown("---")
 
 st.header("🚨 Active Alerts")
+
 alerts_df = db.fetch_alerts()
 
 if not alerts_df.empty:
-    # Sidebar filters
-    st.sidebar.header("Filter Alerts")
-    alert_filter = st.sidebar.multiselect("Select Alert Type(s)", alerts_df['alert_type'].unique())
-    severity_filter = st.sidebar.multiselect("Select Severity", alerts_df['severity'].unique())
-    sort_by = st.sidebar.selectbox("Sort By", options=["alert_type", "severity"], index=0)
-    ascending = st.sidebar.checkbox("Ascending", value=True)
-
-    # Apply filters dynamically on a copy of the alerts dataframe
-    filtered_df = filter_and_sort_alerts(alerts_df, alert_filter, severity_filter, sort_by, ascending)
-
     #Snow doesn't require service work so let's just filter it out
-    filtered_df = filtered_df[filtered_df['alert_type'] != 'SNOW_ON_SITE']
+    alerts_df = alerts_df[alerts_df['alert_type'] != 'SNOW_ON_SITE']
 
-    # Create multiple views (tabs) from the filtered data
-    tab1, tab2, tab3 = st.tabs(["Detailed Alerts", "Alerts Summary", "Alert Cards"])
+    st.header("Site Production failure")
 
-    with tab1:
-        st.subheader("Detailed Alerts")
-        st.dataframe(filtered_df, height=300, column_config={
-            "url": st.column_config.LinkColumn(
-                label="Site url",
-                display_text="Link"
-            )
-        })
+    production_df = alerts_df[alerts_df['alert_type'] == 'INVERTER_BELOW_THRESHOLD_LIMIT']
+    st.dataframe(production_df, column_config={
+        "url": st.column_config.LinkColumn(
+            label="Site url",
+            display_text="Link"
+        )
+    })
 
-    with tab2:
-        st.subheader("Alerts Summary")
-        # Example summary: count alerts by alert_type
-        if not filtered_df.empty:
-            summary_df = filtered_df.groupby("alert_type").size().reset_index(name="Count")
-            st.dataframe(summary_df)
-            st.bar_chart(summary_df.set_index("alert_type"))
-        else:
-            st.info("No data to summarize.")
+    #Filter out what we just displayed
+    alerts_df = alerts_df[alerts_df['alert_type'] != 'INVERTER_BELOW_THRESHOLD_LIMIT']
 
-    with tab3:
-        st.subheader("Alert Cards")
-        # Using your previously commented-out alert card style for each row
-        for idx, row in filtered_df.iterrows():
-            cols = st.columns([3, 1])
-            cols[0].markdown(f"**Name:** {row.get('Name', 'N/A')} | **Score:** {row.get('Score', 'N/A')}")
-            if cols[1].button("Action", key=idx):
-                st.write(f"Action clicked for {row.get('Name', 'this alert')}")
-                
+    st.header("Site Communication failure")
+
+    comms_df = alerts_df[alerts_df['alert_type'] == 'SITE_COMMUNICATION_FAULT']
+    st.dataframe(comms_df, column_config={
+        "url": st.column_config.LinkColumn(
+            label="Site url",
+            display_text="Link"
+        )
+    })
+    alerts_df = alerts_df[alerts_df['alert_type'] != 'SITE_COMMUNICATION_FAULT']
+
+    st.header("Panel-level failures")
+
+    panel_df = alerts_df[alerts_df['alert_type'] == 'PANEL_COMMUNICATION_FAULT']
+    st.dataframe(panel_df, column_config={
+        "url": st.column_config.LinkColumn(
+            label="Site url",
+            display_text="Link"
+        )
+    })
+    alerts_df = alerts_df[alerts_df['alert_type'] != 'PANEL_COMMUNICATION_FAULT']
+
+    st.header("System Configuration failure")
+
+    st.dataframe(alerts_df, column_config={
+        "url": st.column_config.LinkColumn(
+            label="Site url",
+            display_text="Link"
+        )
+    })
 else:
     st.success("No active alerts.")
     
@@ -284,3 +285,23 @@ if not df.empty:
     #     )
     # )
     # Display the chart in Streamlit
+
+    #     with tab2:
+    #     st.subheader("Alerts Summary")
+    #     # Example summary: count alerts by alert_type
+    #     if not filtered_df.empty:
+    #         summary_df = filtered_df.groupby("alert_type").size().reset_index(name="Count")
+    #         st.dataframe(summary_df)
+    #         st.bar_chart(summary_df.set_index("alert_type"))
+    #     else:
+    #         st.info("No data to summarize.")
+
+    # with tab3:
+    #     st.subheader("Alert Cards")
+    #     # Using your previously commented-out alert card style for each row
+    #     for idx, row in filtered_df.iterrows():
+    #         cols = st.columns([3, 1])
+    #         cols[0].markdown(f"**Name:** {row.get('Name', 'N/A')} | **Score:** {row.get('Score', 'N/A')}")
+    #         if cols[1].button("Action", key=idx):
+    #             st.write(f"Action clicked for {row.get('Name', 'this alert')}")
+                
