@@ -1,4 +1,5 @@
 from datetime import datetime, date
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -19,7 +20,6 @@ def add_site_if_not_exists(vendor_code, site_id, name, url, nearest_vendor_code,
         session.close()
         return existing_site
 
-    # Create a new Site instance if one doesn't exist.
     new_site = Sql.Site(
         vendor_code=vendor_code,
         site_id=site_id,
@@ -107,11 +107,24 @@ def fetch_all_batteries():
     query = session.query(Sql.Battery).order_by(Sql.Battery.state_of_energy.asc())
     all_batteries = pd.read_sql(query.statement, session.bind)
     session.close()
+    
+
+def get_total_noon_kw_all() -> List[Tuple[date, float]]:
+    session = Sql.SessionLocal()
+    try:
+        # Query both production_day and total_noon_kw
+        results = session.query(
+            Sql.ProductionHistory.production_day,
+            Sql.ProductionHistory.total_noon_kw
+        ).all()
+        # results is a list of tuples: [(date1, kw1), (date2, kw2), ...]
+        return results
+    finally:
+        session.close()
+
     return all_batteries
 
-
-
-def get_production_by_day(production_day: date) -> set:
+def get_production_set(production_day: date) -> set:
     session = Sql.SessionLocal()
     try:
         #This doesn't respect the production_day for some reason, but does return data so is okay for now.
@@ -120,29 +133,31 @@ def get_production_by_day(production_day: date) -> set:
         #record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
         record = session.query(Sql.ProductionHistory).first()
         if record:
-            # Ensure that the data is returned as a set.
-            return record.data if isinstance(record.data, set) else set(record.data)
+            return record.data
         return set()
     finally:
         session.close()
 
-def insert_or_update_production_set(new_data: set[SolarPlatform.SiteProduction], production_day):
+def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord], production_day):
     session = Sql.SessionLocal()
     try:
         # Retrieve the existing record by primary key using session.get()
         existing = session.get(Sql.ProductionHistory, production_day)
 
         if existing:
-            # Coerce the existing data to a set if needed and merge it with the new data.
-            combined_set = (existing.data if isinstance(existing.data, set)
-                            else set(existing.data))
+            combined_set = (existing.data)
             combined_set.update(new_data)
         else:
             # If no record exists, use a copy of new_data.
             combined_set = new_data.copy()
 
+        #calculate the total noon production for all sites, to use for historical purposes.
+        total_noon_kw = 0
+        for e in combined_set:
+            total_noon_kw += e.production_kw
+
         # Create a fresh instance with the merged data.
-        new_record = Sql.ProductionHistory(production_day=production_day, data=combined_set)
+        new_record = Sql.ProductionHistory(production_day=production_day, data=combined_set, total_noon_kw=total_noon_kw)
 
         # session.merge() will check if a record with the given primary key exists;
         # if so, it will update that record with new_record’s state, otherwise it will add a new record.
@@ -203,7 +218,7 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.SiteProduction],
 
 def process_bulk_solar_production(
     reference_date: date,
-    production_data: set[SolarPlatform.SiteProduction], 
+    production_data: set[SolarPlatform.ProductionRecord], 
     recalibrate: bool = False, 
     sunny_threshold: float = 100.0):
 
@@ -213,11 +228,11 @@ def process_bulk_solar_production(
 
     # Compute average production for sanity check.
     avg_prod = sum(prod.production_kw for prod in production_data) / len(production_data)
-    if avg_prod < sunny_threshold and not recalibrate:
-        raise ValueError(
-            f"Average production ({avg_prod:.2f}) is below the sunny threshold ({sunny_threshold}). "
-            "Data rejected to prevent calibration on a cloudy day."
-        )
+    # if avg_prod < sunny_threshold and not recalibrate:
+    #     raise ValueError(
+    #         f"Average production ({avg_prod:.2f}) is below the sunny threshold ({sunny_threshold}). "
+    #         "Data rejected to prevent calibration on a cloudy day."
+    #     )
     
     insert_or_update_production_set(production_data, reference_date)
 

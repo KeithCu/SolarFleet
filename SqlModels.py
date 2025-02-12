@@ -45,9 +45,10 @@ class Alert(Base):
     
 class ProductionHistory(Base):
     __tablename__ = "productionhistory"
-    production_day = Column(Date, primary_key=True, default=lambda: datetime.utcnow().date())
+    production_day = Column(Date, primary_key=True)
     #stores a set of SolarPlatform.ProductionRecord, one for each site
     data = Column(PickleType, nullable=False)
+    total_noon_kw = Column(Float, nullable=False)
 
 class Battery(Base):
     __tablename__ = "batteries"

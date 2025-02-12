@@ -11,12 +11,6 @@ import random
 import math
 from datetime import datetime, timedelta, time
 
-@dataclass(frozen=True)
-class SiteInfo:
-    site_id: str
-    name: str
-    url: str
-    zipcode: str
 
 @dataclass(frozen=True)
 class BatteryInfo:
@@ -42,30 +36,24 @@ class SolarAlert:
         if not (0 <= self.severity <= 100):
             raise ValueError("Severity must be between 0 and 100.")
 
-#In-memory production information, used for dashboard
 @dataclass(frozen=True)
-class SiteProduction:
+class SiteInfo:
     vendor_code: str
     site_id: str
-
     name: str
     url: str
-
-    zipcode: int
+    zipcode: str
     latitude: float
     longitude: float
-
-    production_kw : float
-
 
 #In Sqlite, for each day, we store a set of ProductionRecord objects, one for each site.
 @dataclass(frozen=True)
 class ProductionRecord:
     vendor_code: str
     site_id: str
-    production: float
-    #Two ProductionRecord objects are considered equal if they share the same vendor and site.
+    production_kw: float
 
+    #Two ProductionRecord objects are considered equal if they share the same vendor and site.
     def __hash__(self):
         return hash((self.vendor_code, self.site_id))
 
@@ -155,7 +143,6 @@ def disk_cache(expiration_seconds):
 from datetime import datetime, timedelta, time
 
 #FIXME, harding codes Eastern timezone for now
-
 def get_recent_noon() -> datetime:
 
     eastern = ZoneInfo("America/New_York")

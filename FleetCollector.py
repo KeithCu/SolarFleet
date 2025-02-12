@@ -44,15 +44,12 @@ def collect_platform(platform):
             # Fetch production data and put into set
             site_production = platform.get_production(site_id, reference_date)
 
+            #Todo this is supposed to be a ProductionRecord. However, I need this other data
+            #elsewhere .
             if site_production is not None:
-                new_production = SolarPlatform.SiteProduction(
+                new_production = SolarPlatform.ProductionRecord(
                     vendor_code=platform.get_vendorcode(),
                     site_id=site_id,
-                    name=sites[site_id].name,
-                    url=sites[site_id].url,
-                    zipcode=sites[site_id].zipcode,
-                    latitude=latitude,
-                    longitude=longitude,
                     production_kw=site_production,     
                 )
                 production_set.add(new_production)

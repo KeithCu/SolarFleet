@@ -134,25 +134,6 @@ def filter_and_sort_alerts(alerts_df, vendor_filter, alert_filter, severity_filt
         filtered_df = filtered_df.sort_values(by=sort_by, ascending=ascending)
     return filtered_df
 
-def get_site_coordinates(sites):
-    site_data = []
-    for site_id, site_info in sites.items():
-        zipcode = site_info.zipcode
-        if isinstance(zipcode, pd.Series):
-            zipcode = zipcode.iloc[0]  # Ensure it's a single value
-        lat, lon = SolarPlatform.get_coordinates(zipcode)
-        if lat is None or lon is None:
-            lat, lon = SolarPlatform.get_coordinates(48071)
-
-        if lat and lon:
-            site_data.append({
-                "site_id": site_id,
-                 "name": site_info.name,
-                "latitude": lat,
-                "longitude": lon,
-                "zipcode": zipcode,
-            })
-    return pd.DataFrame(site_data)
 
 def login():
     # Create a password input widget that masks the input
@@ -237,67 +218,58 @@ else:
 
 with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
     all_batteries_df = db.fetch_all_batteries()
-    if not all_batteries_df.empty:
+    if all_batteries_df is not None and not all_batteries_df.empty:
         st.dataframe(all_batteries_df, height=400)
     else:
         st.success("No battery data available.")
 
 st.header("🌍 Site Map with Production Data")
 
-# Fetch production data for all sites
-production_set = db.get_production_by_day(SolarPlatform.get_recent_noon())
-production_data = pd.DataFrame([asdict(record) for record in production_set])
+# Fetch recent production data for all sites
+production_set = db.get_production_set(SolarPlatform.get_recent_noon())
+df = pd.DataFrame([asdict(record) for record in production_set])
 
 #FIXME, not 100% correct yet
 platform = SolarEdgePlatform()
 sites = platform.get_sites_map()
-site_df = get_site_coordinates(sites)
 
-#Remove the duplicate columns
-site_df = site_df.drop(columns=['latitude', 'longitude', 'zipcode', 'name'], errors='ignore')
+site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
 
-# Fetch production data
-production_data = db.get_production_by_day(SolarPlatform.get_recent_noon())
-df = pd.DataFrame([asdict(record) for record in production_data])
-
+#Merge the production data with the site data
 if not df.empty:
     site_df = site_df.merge(df, on="site_id", how="left")
 
-#Trim the values to 2 decimal places
-site_df['production_kw'] = site_df['production_kw'].round(2)
+    #Trim the values to 2 decimal places
+    site_df['production_kw'] = site_df['production_kw'].round(2)
 
-create_map_view(site_df)
+    create_map_view(site_df)
 
-if 'latitude' in site_df.columns:
-    # Sort the DataFrame in place by production_kw in descending order.
-    site_df.sort_values("production_kw", ascending=False, inplace=True)
+    if 'latitude' in site_df.columns:
+        # Sort the DataFrame in place by production_kw in descending order.
+        site_df.sort_values("production_kw", ascending=False, inplace=True)
         
-    # Debug: Print production values to verify sort order.
-    # for value in site_df['production_kw']:
-    #     print(value)
-    
-    # Build the horizontal bar chart.
-    # The y-axis is sorted by production_kw in descending order so that
-    # the highest production value appears at the top.
-    chart = alt.Chart(site_df).mark_bar().encode(
-        x=alt.X('production_kw:Q', title='Production (kW)'),
-        y=alt.Y(
-            'name:N', 
-            title='Site Name', 
-            sort=alt.SortField(field='production_kw', order='descending')
-        ),
-        tooltip=[
-            alt.Tooltip('name:N', title='Site Name'),
-            alt.Tooltip('production_kw:Q', title='Production (kW)')
-        ]
-    ).properties(
-        title="Noon Production per Site",
-        height=len(site_df) * 20  # Approximately 20 pixels per site row.
-    )
-    
-    st.altair_chart(chart, use_container_width=True)
-else:
-    st.info("No production data available.")
+        # Build the horizontal bar chart.
+        # The y-axis is sorted by production_kw in descending order so that
+        # the highest production value appears at the top.
+        chart = alt.Chart(site_df).mark_bar().encode(
+            x=alt.X('production_kw:Q', title='Production (kW)'),
+            y=alt.Y(
+                'name:N', 
+                title='Site Name', 
+                sort=alt.SortField(field='production_kw', order='descending')
+            ),
+            tooltip=[
+                alt.Tooltip('name:N', title='Site Name'),
+                alt.Tooltip('production_kw:Q', title='Production (kW)')
+            ]
+        ).properties(
+            title="Noon Production per Site",
+            height=len(site_df) * 20  # Approximately 20 pixels per site row.
+        )
+        
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        st.info("No production data available.")
 
 
     # # Duplicate the x-axis on the top by creating a second x-axis that overlays the original

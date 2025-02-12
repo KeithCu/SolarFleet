@@ -51,7 +51,9 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         for site in sites:
             site_id = site.get('siteId')
             site_url = SOLAREDGE_SITE_URL + str(site_id)
-            site_info = SolarPlatform.SiteInfo(site.get('siteId'), site.get('name'), site_url, site['location']['zip'])
+            zipcode = site['location']['zip']
+            latitude, longitude = SolarPlatform.get_coordinates(zipcode)
+            site_info = SolarPlatform.SiteInfo(cls.get_vendorcode(), site.get('siteId'), site.get('name'), site_url, zipcode, latitude, longitude)
             sites_dict[site_id] = site_info
                 
         return sites_dict
@@ -71,7 +73,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return batteries
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_DAY * 2)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
     def get_production(cls, site_id, reference_time):
         end_time = reference_time + timedelta(minutes=15)
 
@@ -132,7 +134,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return battery_states
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
     def get_alerts(cls) -> List[SolarPlatform.SolarAlert]:
         url = f'{SOLAREDGE_BASE_URL}/alerts'
         sites_dict = cls.get_sites_map()
