@@ -74,13 +74,6 @@ def collect_platform(platform):
         platform.log(f"Error while fetching alerts: {e}")
         return
 
-def collect_all():
-
-#    platform = SolarEdgePlatform()
-
-    if False and is_data_recent():
-        print("Skipping updates as data is recent enough.")
-        return
-
-if __name__ == '__main__':
-    collect_all()
+def run_collection():
+    platform = SolarEdgePlatform()
+    collect_platform(platform)

@@ -11,7 +11,7 @@ from streamlit_folium import st_folium
 import SolarPlatform
 import SqlModels as Sql
 import Database as db
-from FleetCollector import collect_platform
+from FleetCollector import collect_platform, run_collection
 from SolarEdge import SolarEdgePlatform
 import altair as alt
 
@@ -51,8 +51,13 @@ def create_map_view(sites_df):
             f"<strong>{row['name']} ({row['site_id']})</strong><br>"
             f"Production: {row['production_kw']} W"
         )
+        location=[row['latitude'], row['longitude']]
+        if np.isnan(row['latitude']) or np.isnan(row['longitude']):
+            print("bug!")
+            location = [43.0, -38.1]
+            
         folium.Marker(
-            location=[row['latitude'], row['longitude']],
+            location=location,
             popup=folium.Popup(popup_html, max_width=300),
             icon=folium.DivIcon(
                 html=f"""
@@ -108,10 +113,6 @@ def filter_and_sort_alerts(alerts_df, vendor_filter, alert_filter, severity_filt
         filtered_df = filtered_df.sort_values(by=sort_by, ascending=ascending)
     return filtered_df
 
-def run_collection():
-    platform = SolarEdgePlatform()
-    collect_platform(platform)
-
 def get_site_coordinates(sites):
     site_data = []
     for site_id, site_info in sites.items():
@@ -128,7 +129,7 @@ def get_site_coordinates(sites):
                  "name": site_info.name,
                 "latitude": lat,
                 "longitude": lon,
-#                "zipcode": zipcode,
+                "zipcode": zipcode,
             })
     return pd.DataFrame(site_data)
 
@@ -232,7 +233,7 @@ display_map_with_production()
 
 if not production_data.empty:
     # Create a DataFrame with the production data and sort for a cleaner look
-    df = production_data.sort_values("noon_production", ascending=True)
+    df = production_data.sort_values("production_kw", ascending=True)
 
     # Streamlit dashboard header
     st.title("Fleet Production at Noon")
@@ -240,11 +241,11 @@ if not production_data.empty:
     # Create a horizontal bar chart using Plotly Express
     fig = px.bar(
         df,
-        x="noon_production",
+        x="production_kw",
         y="site_id",
         orientation='h',  # Horizontal bars so that site names are on the y-axis
         title="Noon Production per Site",
-        labels={"noon_production": "Production (kW)", "site_id": "Site ID"}
+        labels={"production_kw": "Production (kW)", "site_id": "Site ID"}
     )
 
     # Adjust the layout to be tall enough for all site names.

@@ -113,7 +113,11 @@ def fetch_all_batteries():
 
 def get_production_by_day(production_day: date) -> set:
     session = Sql.SessionLocal()
-    try:                #fixme: .filter_by(production_day=production_day)
+    try:
+        #This doesn't respect the production_day for some reason, but does return data so is okay for now.
+        # Perhaps the day stored in the database is not exactly this time, but close?
+        #Anyway once I get the stuff displaying something, anything, reasonable, I can fix.
+        #record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
         record = session.query(Sql.ProductionHistory).first()
         if record:
             # Ensure that the data is returned as a set.
