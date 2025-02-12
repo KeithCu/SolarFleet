@@ -110,6 +110,17 @@ def fetch_alerts():
     session.close()
     return alerts
 
+def delete_all_alerts():
+    session = Sql.SessionLocal()
+    try:
+        session.query(Sql.Alert).delete()
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+        
 def fetch_low_batteries():
     session = Sql.SessionLocal()
     query = session.query(Sql.Battery).filter((Sql.Battery.state_of_energy < 0.10) | (Sql.Battery.state_of_energy.is_(None)))

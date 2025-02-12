@@ -33,7 +33,7 @@ class SolarAlert:
     alert_type: str
     severity: int  # severity in percentage (0-100% production down)
     details: str
-    first_triggered: str
+    first_triggered: datetime
 
     def __post_init__(self):
         if not (0 <= self.severity <= 100):

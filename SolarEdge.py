@@ -149,9 +149,15 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             response.raise_for_status()
             alerts = response.json()
             for alert in alerts:
-                a_site_id = cls.add_vendorcodeprefix(alert.get('siteId'))
-                alert_details = ''
-                solarAlert = SolarPlatform.SolarAlert(a_site_id, alert.get('type'), alert.get('impact'), alert_details, alert.get('firstTriggered'))
+                site_id = cls.add_vendorcodeprefix(alert.get('siteId'))
+                alert_details = '' #FIXME
+                first_triggered_str = alert.get('firstTrigger')
+                # If the timestamp ends with a 'Z', replace it with '+00:00' for proper parsing
+                if first_triggered_str and first_triggered_str.endswith("Z"):
+                    first_triggered = datetime.fromisoformat(first_triggered_str.replace("Z", "+00:00"))
+                else:
+                    first_triggered = first_triggered_str
+                solarAlert = SolarPlatform.SolarAlert(site_id, alert.get('type'), alert.get('impact'), alert_details, first_triggered)
                 all_alerts.append(solarAlert)
 
             return all_alerts

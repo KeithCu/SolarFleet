@@ -154,6 +154,10 @@ st.title("☀️Absolute Solar Monitoring Dashboard")
 if st.button("Run Collection"):
     run_collection()
 
+if st.button("Delete All Alerts (Test)"):
+    db.delete_all_alerts()
+    st.success("All alerts deleted!")
+    
 st.markdown("---")
 
 st.header("🚨 Active Alerts")

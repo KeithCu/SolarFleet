@@ -36,7 +36,7 @@ class Alert(Base):
     details    = Column(String, nullable=False)
     severity   = Column(Integer, nullable=False)
 
-    first_triggered  = Column(DateTime, default=datetime.utcnow)
+    first_triggered  = Column(DateTime, nullable=False)
     resolved_date   = Column(DateTime, nullable=True)
 
     __table_args__ = (
