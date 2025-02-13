@@ -184,7 +184,7 @@ if not alerts_df.empty:
             )
         }
     )
-    if st.button("Save Production Site History Updatez", key="save_prod_history"):
+    if st.button("Save Production Site History Updates", key="save_prod_history"):
         for _, row in edited_production_df.iterrows():
             db.update_site_history(row['site_id'], row['history'])
     alerts_df = alerts_df[alerts_df['alert_type'] != 'INVERTER_BELOW_THRESHOLD_LIMIT']
@@ -197,11 +197,13 @@ if not alerts_df.empty:
     edited_comms_df = st.data_editor(
         comms_df,
         key="comms_editor",
+        use_container_width=False,
         column_config={
             "url": st.column_config.LinkColumn(
                 label="Site url",
                 display_text="Link"
-            )
+            ),
+            "history": st.column_config.TextColumn(label="History                                                                                                     X")
         }
     )
     if st.button("Save Communication Site History Updates", key="save_comms_history"):
