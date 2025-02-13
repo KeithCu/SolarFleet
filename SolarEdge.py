@@ -52,8 +52,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         sites_dict = {}
 
         for site in sites:
+            site_url = SOLAREDGE_SITE_URL + str(site.get('siteId'))
             site_id = cls.add_vendorcodeprefix(site.get('siteId'))
-            site_url = SOLAREDGE_SITE_URL + str(site_id)
             zipcode = site['location']['zip']
             name = site.get('name')
             if SolarPlatform.FAKE_DATA:
