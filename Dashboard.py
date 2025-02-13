@@ -1,21 +1,24 @@
 from datetime import datetime, timedelta
 from dataclasses import asdict
+import requests
 import numpy as np
 import pandas as pd
 import folium
-import plotly.express as px
-import requests
+import altair as alt
 import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_folium import st_folium
+
 import SolarPlatform
 import SqlModels as Sql
 import Database as db
 from FleetCollector import collect_platform, run_collection
 from SolarEdge import SolarEdgePlatform
-import altair as alt
 
 from api_keys import STREAMLIT_PASSWORD
+
+
+# Helper Functions
 
 def send_browser_notification(title, message):
     js_code = f"""
@@ -33,16 +36,13 @@ def send_browser_notification(title, message):
     """
     st.components.v1.html(f"<script>{js_code}</script>", height=0)
 
+
 def create_map_view(sites_df):
     """
     Create a folium map that shows each site's current noon production.
     The icon background color is red if there is no production (power == 0),
     otherwise it remains blue.
     """
-    import numpy as np
-    import folium
-    from streamlit_folium import st_folium
-
     # Center the map at the average location of all sites (initially)
     avg_lat = sites_df['latitude'].mean()
     avg_lon = sites_df['longitude'].mean()
@@ -63,7 +63,7 @@ def create_map_view(sites_df):
         # Sanity check: ignore if lat/lon is NaN or outside Michigan's bounding box.
         if np.isnan(lat) or np.isnan(lon) or lat < MIN_LAT or lat > MAX_LAT or lon < MIN_LON or lon > MAX_LON:
             print(f"Skipping marker for {row.get('site_id')} - {row.get('name')}: coordinates ({lat}, {lon}) out of bounds")
-            continue  # Skip this marker
+            continue
         
         marker_coords.append([lat, lon])
         
@@ -102,7 +102,8 @@ def create_map_view(sites_df):
     if marker_coords:
         m.fit_bounds(marker_coords)
     
-    st_folium(m, width=1200) #, zoom=5, zoom_snap=0.1)
+    st_folium(m, width=1200)
+
 
 def display_historical_chart(historical_df, site_ids):
     if not site_ids:
@@ -113,7 +114,6 @@ def display_historical_chart(historical_df, site_ids):
     # Aggregate the production by date (summing the production values)
     agg_data = site_data.groupby("date", as_index=False)["production_kw"].sum()
     
-    # Create a thick line by specifying the size parameter in mark_line.
     chart = alt.Chart(agg_data).mark_line(size=5).encode(
         x=alt.X('date:T', title='Date'),
         y=alt.Y('power:Q', title='Aggregated Production (W)'),
@@ -137,10 +137,7 @@ def filter_and_sort_alerts(alerts_df, alert_filter, severity_filter, sort_by, as
 
 
 def login():
-    # Create a password input widget that masks the input
     password = st.text_input("Enter the password", type="password")
-    
-    # When the login button is clicked, validate the password
     if st.button("Login"):
         if password == STREAMLIT_PASSWORD:
             st.session_state.authenticated = True
@@ -148,12 +145,45 @@ def login():
         else:
             st.error("Incorrect password. Please try again.")
 
-# Streamlit UI
-# Setup page and initialize DB
+
+def process_alert_section(df, header_title, editor_key, save_button_label, column_config, drop_columns=None, alert_type=None, use_container_width=True):
+    """
+    Helper to process an alert section.
+    
+    If alert_type is provided, it filters the dataframe accordingly.
+    Optionally drops specified columns before rendering the data editor.
+    Saves any history updates and removes that alert type from the dataframe.
+    """
+    st.header(header_title)
+    if alert_type is not None:
+        section_df = df[df['alert_type'] == alert_type].copy()
+    else:
+        section_df = df.copy()
+    if drop_columns:
+        section_df.drop(columns=drop_columns, inplace=True)
+    edited_df = st.data_editor(
+        section_df,
+        key=editor_key,
+        use_container_width=use_container_width,
+        column_config=column_config
+    )
+    if st.button(save_button_label, key=editor_key + "_save"):
+        for _, row in edited_df.iterrows():
+            db.update_site_history(row['site_id'], row['history'])
+    if alert_type is not None:
+        df = df[df['alert_type'] != alert_type]
+    return df
+
+
+def assign_site_type(site_id):
+    return site_id[:2]
+
+
+# Main Streamlit UI
+
 st.set_page_config(page_title="Absolute Solar Monitoring", layout="wide")
 Sql.init_fleet_db()
 st.title("☀️Absolute Solar Monitoring Dashboard")
-
 
 if st.button("Run Collection"):
     run_collection()
@@ -172,83 +202,55 @@ sites_history_df = db.fetch_sites()[["site_id", "history"]]
 if not alerts_df.empty:
     # Filter out unwanted alert types
     alerts_df = alerts_df[alerts_df['alert_type'] != 'SNOW_ON_SITE']
-    
     # Merge site history once for all alerts
     merged_alerts_df = alerts_df.merge(sites_history_df, on="site_id", how="left")
     
-    # --- Site Production failure ---
-    st.header("Site Production failure")
-    production_df = merged_alerts_df[merged_alerts_df['alert_type'] == 'INVERTER_BELOW_THRESHOLD_LIMIT']
-    edited_production_df = st.data_editor(
-        production_df,
-        key="production_production",
+    merged_alerts_df = process_alert_section(
+        merged_alerts_df,
+        header_title="Site Production failure",
+        alert_type="INVERTER_BELOW_THRESHOLD_LIMIT",
+        editor_key="production_production",
+        save_button_label="Save Production Site History Updates",
         column_config={
-            "url": st.column_config.LinkColumn(
-                label="Site url",
-                display_text="Link"
-            )
+            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
         }
     )
-    if st.button("Save Production Site History Updates", key="save_prod_history"):
-        for _, row in edited_production_df.iterrows():
-            db.update_site_history(row['site_id'], row['history'])
-    merged_alerts_df = merged_alerts_df[merged_alerts_df['alert_type'] != 'INVERTER_BELOW_THRESHOLD_LIMIT']
     
-    # --- Site Communication failure ---
-    st.header("Site Communication failure")
-    comms_df = merged_alerts_df[merged_alerts_df['alert_type'] == 'SITE_COMMUNICATION_FAULT']
-    comms_df = comms_df.drop(columns=["alert_type", "details", "severity"])
-    edited_comms_df = st.data_editor(
-        comms_df,
-        key="comms_editor",
-        use_container_width=False,
+    merged_alerts_df = process_alert_section(
+        merged_alerts_df,
+        header_title="Site Communication failure",
+        alert_type="SITE_COMMUNICATION_FAULT",
+        editor_key="comms_editor",
+        save_button_label="Save Communication Site History Updates",
         column_config={
-            "url": st.column_config.LinkColumn(
-                label="Site url",
-                display_text="Link"
-            ),
+            "url": st.column_config.LinkColumn(label="Site url", display_text="Link"),
             "history": st.column_config.TextColumn(label="History                                                                                                     X")
-        }
+        },
+        drop_columns=["alert_type", "details", "severity"],
+        use_container_width=False
     )
-    if st.button("Save Communication Site History Updates", key="save_comms_history"):
-        for _, row in edited_comms_df.iterrows():
-            db.update_site_history(row['site_id'], row['history'])
-    merged_alerts_df = merged_alerts_df[merged_alerts_df['alert_type'] != 'SITE_COMMUNICATION_FAULT']
     
-    # --- Panel-level failures ---
-    st.header("Panel-level failures")
-    panel_df = merged_alerts_df[merged_alerts_df['alert_type'] == 'PANEL_COMMUNICATION_FAULT']
-    edited_panel_df = st.data_editor(
-        panel_df,
-        key="panel_editor",
+    merged_alerts_df = process_alert_section(
+        merged_alerts_df,
+        header_title="Panel-level failures",
+        alert_type="PANEL_COMMUNICATION_FAULT",
+        editor_key="panel_editor",
+        save_button_label="Save Panel Site History Updates",
         column_config={
-            "url": st.column_config.LinkColumn(
-                label="Site url",
-                display_text="Link"
-            )
+            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
         }
     )
-    if st.button("Save Panel Site History Updates", key="save_panel_history"):
-        for _, row in edited_panel_df.iterrows():
-            db.update_site_history(row['site_id'], row['history'])
-    merged_alerts_df = merged_alerts_df[merged_alerts_df['alert_type'] != 'PANEL_COMMUNICATION_FAULT']
     
-    # --- System Configuration failure ---
-    st.header("System Configuration failure")
-    sysconf_df = merged_alerts_df.copy()
-    edited_sysconf_df = st.data_editor(
-        sysconf_df,
-        key="sysconf_editor",
+    process_alert_section(
+        merged_alerts_df,
+        header_title="System Configuration failure",
+        editor_key="sysconf_editor",
+        save_button_label="Save System Config Site History Updates",
         column_config={
-            "url": st.column_config.LinkColumn(
-                label="Site url",
-                display_text="Link"
-            )
-        }
+            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
+        },
+        alert_type=None
     )
-    if st.button("Save System Config Site History Updates", key="save_sysconf_history"):
-        for _, row in edited_sysconf_df.iterrows():
-            db.update_site_history(row['site_id'], row['history'])
 else:
     st.success("No active alerts.")
         
@@ -268,33 +270,21 @@ with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
 
 st.header("🌍 Site Map with Production Data")
 
-# Fetch recent production data for all sites
 production_set = db.get_production_set(SolarPlatform.get_recent_noon())
 df = pd.DataFrame([asdict(record) for record in production_set])
 
-#FIXME, not 100% correct yet
 platform = SolarEdgePlatform()
 sites = platform.get_sites_map()
 
 site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
+site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
 
-def assign_site_type(site_id):
-    return site_id[:2]
-
-site_df["vendor_code"] = site_df["site_id"].apply(assign_site_type)
-
-#Merge the production data with the site data
 if not df.empty and 'latitude' in site_df.columns:
     site_df = site_df.merge(df, on="site_id", how="left")
-
-    #Trim the values to 2 decimal places
     site_df['production_kw'] = site_df['production_kw'].round(2)
-
     create_map_view(site_df)
-
-    # Sort the DataFrame in place by production_kw in descending order.
-    site_df.sort_values("production_kw", ascending=False, inplace=True)        
-
+    
+    site_df.sort_values("production_kw", ascending=False, inplace=True)
     color_scale = alt.Scale(
         domain=["EN", "SE", "SMA"],
         range=["orange", "#8B0000", "steelblue"]
@@ -314,42 +304,9 @@ if not df.empty and 'latitude' in site_df.columns:
         ]
     ).properties(
         title="Noon Production per Site",
-        height=len(site_df) * 25  # Approximately 25 pixels per site row.
-    )        
+        height=len(site_df) * 25
+    )
+    
     st.altair_chart(chart, use_container_width=True)
 else:
     st.info("No production data available.")
-
-
-    # # Duplicate the x-axis on the top by creating a second x-axis that overlays the original
-    # fig.update_layout(
-    #     # The original x-axis remains with its title at the bottom.
-    #     # Now, define a second x-axis (xaxis2) that overlays x and is positioned at the top.
-    #     xaxis2=dict(
-    #         side='top',
-    #         overlaying='x',  # This makes xaxis2 share the same domain as x
-    #         showgrid=False,  # Optionally, disable grid lines for clarity
-    #         title=dict(text="Production (kW)")
-    #     )
-    # )
-    # Display the chart in Streamlit
-
-    #     with tab2:
-    #     st.subheader("Alerts Summary")
-    #     # Example summary: count alerts by alert_type
-    #     if not filtered_df.empty:
-    #         summary_df = filtered_df.groupby("alert_type").size().reset_index(name="Count")
-    #         st.dataframe(summary_df)
-    #         st.bar_chart(summary_df.set_index("alert_type"))
-    #     else:
-    #         st.info("No data to summarize.")
-
-    # with tab3:
-    #     st.subheader("Alert Cards")
-    #     # Using your previously commented-out alert card style for each row
-    #     for idx, row in filtered_df.iterrows():
-    #         cols = st.columns([3, 1])
-    #         cols[0].markdown(f"**Name:** {row.get('Name', 'N/A')} | **Score:** {row.get('Score', 'N/A')}")
-    #         if cols[1].button("Action", key=idx):
-    #             st.write(f"Action clicked for {row.get('Name', 'this alert')}")
-                

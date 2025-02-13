@@ -48,6 +48,12 @@ class SiteInfo:
     latitude: float
     longitude: float
 
+def extract_vendor_code(site_id):
+    if ':' in site_id:
+        return site_id.split(':', 1)[0]
+    else:
+        raise ValueError(f"Invalid site_id format: {site_id}. Expected a vendor code prefix followed by a colon.")            
+
 #In Sqlite, for each day, we store a set of ProductionRecord objects, one for each site.
 @dataclass(frozen=True)
 class ProductionRecord:
@@ -99,7 +105,7 @@ class SolarPlatform(ABC):
     @classmethod
     def add_vendorcodeprefix(cls, site_id):
         return cls.get_vendorcode() + ":" + str(site_id)
-    
+
     @classmethod
     def strip_vendorcodeprefix(cls, site_id):
         if ':' in site_id:
