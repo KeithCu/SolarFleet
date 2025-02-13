@@ -1,3 +1,4 @@
+from api_keys import SOLARK_EMAIL, SOLARK_PASSWORD
 import requests
 import time
 from datetime import datetime
@@ -18,19 +19,21 @@ SOLARK_LOGIN_URL = SOLARK_BASE_URL + "/login"
 SOLARK_SITES_URL = SOLARK_BASE_URL + "/plants"
 SOLARK_OVERVIEW_URL = SOLARK_SITES_URL + "/overview"
 
-from api_keys import SOLARK_EMAIL, SOLARK_PASSWORD
 
 g_driver = None
+
 
 def create_driver():
     options = Options()
     # options.add_argument("--headless")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
-    
-    service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+
+    service = Service(ChromeDriverManager(
+        chrome_type=ChromeType.CHROMIUM).install())
     driver = webdriver.Chrome(service=service, options=options)
     return driver
+
 
 class SolArkPlatform(SolarPlatform):
     @classmethod
@@ -41,17 +44,18 @@ class SolArkPlatform(SolarPlatform):
     def solark_login(cls):
         global g_driver
         wait = WebDriverWait(g_driver, 10)
-        
+
         # Open the login page.
         g_driver.get(SOLARK_LOGIN_URL)
-        
+
         # Locate the email input using its placeholder text.
         email_field = wait.until(
-            EC.presence_of_element_located((By.XPATH, "//input[@placeholder='Please input your E-mail']"))
+            EC.presence_of_element_located(
+                (By.XPATH, "//input[@placeholder='Please input your E-mail']"))
         )
         email_field.clear()
         email_field.send_keys(SOLARK_EMAIL)
-        
+
         # Locate the password field using its placeholder and name attributes.
         password_field = wait.until(
             EC.presence_of_element_located((
@@ -60,25 +64,27 @@ class SolArkPlatform(SolarPlatform):
         )
         password_field.clear()
         password_field.send_keys(SOLARK_PASSWORD)
-        
+
         # Locate and click the checkbox.
         checkbox = wait.until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "span.el-checkbox__inner"))
+            EC.element_to_be_clickable(
+                (By.CSS_SELECTOR, "span.el-checkbox__inner"))
         )
         checkbox.click()
-        
+
         # Locate and click the login button.
         login_button = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//button[@type='button' and contains(.,'Log In')]"))
+            EC.element_to_be_clickable(
+                (By.XPATH, "//button[@type='button' and contains(.,'Log In')]"))
         )
         login_button.click()
-        
+
         # Wait until the URL changes (indicating a successful login).
         wait.until(EC.url_changes(SOLARK_LOGIN_URL))
-        
+
         # Pause to ensure all JS processes complete.
         time.sleep(3)
-        
+
         # Return cookies from the session.
         return g_driver.get_cookies()
 
@@ -94,10 +100,10 @@ class SolArkPlatform(SolarPlatform):
         url = SOLARK_OVERVIEW_URL + f"/{site_id}/2"
         g_driver.get(url)
         time.sleep(5)  # Allow time for JavaScript to execute
-        
+
         soup = BeautifulSoup(g_driver.page_source, "html.parser")
         soc_element = soup.find("div", {"class": "soc"})
-        
+
         if soc_element:
             try:
                 return float(soc_element.text.strip().replace('%', ''))
@@ -116,10 +122,10 @@ class SolArkPlatform(SolarPlatform):
 
         g_driver.get(SOLARK_SITES_URL)
         time.sleep(5)  # Allow time for JavaScript to execute
-        
+
         soup = BeautifulSoup(g_driver.page_source, "html.parser")
         site_links = soup.find_all("a", href=True)
-        
+
         sites = {}
         for link in site_links:
             if "/plants/overview/" in link["href"]:
@@ -145,10 +151,10 @@ class SolArkPlatform(SolarPlatform):
         url = SOLARK_OVERVIEW_URL + f"/{site_id}/overview"
         g_driver.get(url)
         time.sleep(5)  # Allow time for JavaScript to execute
-        
+
         soup = BeautifulSoup(g_driver.page_source, "html.parser")
         production_element = soup.find("div", {"class": "production"})
-        
+
         if production_element:
             prod_text = production_element.text.strip().replace('kW', '').strip()
             try:
@@ -164,11 +170,11 @@ class SolArkPlatform(SolarPlatform):
         if g_driver is None:
             g_driver = create_driver()
             cls.solark_login()
-        
+
         # For alerts, assume the main page displays alert information.
         g_driver.get(SOLARK_BASE_URL)
         time.sleep(5)  # Allow time for JavaScript to execute
-        
+
         soup = BeautifulSoup(g_driver.page_source, "html.parser")
         alert_elements = soup.find_all("div", {"class": "alert"})
         alerts = []
@@ -186,6 +192,7 @@ class SolArkPlatform(SolarPlatform):
                 alerts.append(alert)
         return alerts
 
+
 # Example usage:
 if __name__ == "__main__":
     platform = SolArkPlatform()
@@ -195,13 +202,14 @@ if __name__ == "__main__":
         for site in sites.keys():
             soe = platform.get_batteries_soe(site)
             platform.log(f"Site: {sites[site]}, SOC: {soe}%")
-        
+
         # Fetch production data for the first site (if available)
         if sites:
             first_site = next(iter(sites.keys()))
             production = platform.get_production(first_site, None)
-            platform.log(f"Production for site {sites[first_site]}: {production} kW")
-        
+            platform.log(
+                f"Production for site {sites[first_site]}: {production} kW")
+
         # Fetch and log alerts
         alerts = platform.get_alerts()
         for alert in alerts:

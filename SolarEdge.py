@@ -16,6 +16,7 @@ SOLAREDGE_HEADERS = {
     "X-Account-Key": SOLAREDGE_V2_ACCOUNT_KEY
 }
 
+
 class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     @classmethod
     def get_vendorcode(cls):
@@ -27,23 +28,24 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         url = f'{SOLAREDGE_BASE_URL}/sites'
         params = {"page": 1, "sites-in-page": 500}
         all_sites = []
-        
+
         while True:
             cls.log("Fetching all sites from SolarEdge API...")
-            response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
+            response = requests.get(
+                url, headers=SOLAREDGE_HEADERS, params=params)
             response.raise_for_status()
             sites = response.json()
-            
+
             for site in sites:
                 all_sites.append(site)
-                
+
             if len(sites) < params["sites-in-page"]:
                 break
-            params["page"] += 1        
+            params["page"] += 1
         return all_sites
 
     @classmethod
-    @st.cache_data # In-memory cache
+    @st.cache_data  # In-memory cache
     def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         sites = cls.get_sites_list()
 
@@ -58,9 +60,10 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                 name = str(random.randint(1000, 9999)) + " Main St"
 
             latitude, longitude = SolarPlatform.get_coordinates(zipcode)
-            site_info = SolarPlatform.SiteInfo(site_id, name, site_url, zipcode, latitude, longitude)
+            site_info = SolarPlatform.SiteInfo(
+                site_id, name, site_url, zipcode, latitude, longitude)
             sites_dict[site_id] = site_info
-                
+
         return sites_dict
 
     @classmethod
@@ -68,13 +71,15 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     def get_batteries(cls, raw_site_id):
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/devices'
         params = {"types": ["BATTERY"]}
-        
-        cls.log(f"Fetching site / battery inventory data from SolarEdge API for site {raw_site_id}.")
+
+        cls.log(
+            f"Fetching site / battery inventory data from SolarEdge API for site {raw_site_id}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
 
-        batteries = [device for device in devices if device.get('type') == 'BATTERY']
+        batteries = [device for device in devices if device.get(
+            'type') == 'BATTERY']
         return batteries
 
     @classmethod
@@ -82,17 +87,19 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     def get_battery_state_of_energy(cls, raw_site_id, serial_number):
         start_time = datetime.utcnow()
         end_time = start_time + timedelta(minutes=15)
-        
+
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/storage/{serial_number}/state-of-energy'
-        params = { 'from': start_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
-            'resolution': 'QUARTER_HOUR', 'unit': 'PERCENTAGE' }
-        
-        cls.log(f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
+        params = {'from': start_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
+                  'resolution': 'QUARTER_HOUR', 'unit': 'PERCENTAGE'}
+
+        cls.log(
+            f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         soe_data = response.json().get('values', [])
-        
-        latest_value = next((entry['value'] for entry in reversed(soe_data) if entry['value'] is not None), None)
+
+        latest_value = next((entry['value'] for entry in reversed(
+            soe_data) if entry['value'] is not None), None)
         return latest_value
 
     @classmethod
@@ -101,13 +108,14 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
         batteries = cls.get_batteries(raw_site_id)
         battery_states = []
-        
+
         for battery in batteries:
             serial_number = battery.get('serialNumber')
             soe = cls.get_battery_state_of_energy(raw_site_id, serial_number)
-            
-            battery_states.append({'serialNumber': serial_number, 'model': battery.get('model'), 'stateOfEnergy': soe })
-        
+
+            battery_states.append({'serialNumber': serial_number, 'model': battery.get(
+                'model'), 'stateOfEnergy': soe})
+
         return battery_states
 
     @classmethod
@@ -116,16 +124,17 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         raw_site_id = cls.strip_vendorcodeprefix(site_id)
 
         end_time = reference_time + timedelta(minutes=15)
-        url = SOLAREDGE_BASE_URL + f'/sites/{raw_site_id}/power'    
+        url = SOLAREDGE_BASE_URL + f'/sites/{raw_site_id}/power'
         params = {'from': reference_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
-                  'resolution': 'QUARTER_HOUR', 'unit': 'KW' }
-        
-        cls.log(f"Fetching production data from SolarEdge API for site {raw_site_id} at {reference_time}.")
+                  'resolution': 'QUARTER_HOUR', 'unit': 'KW'}
+
+        cls.log(
+            f"Fetching production data from SolarEdge API for site {raw_site_id} at {reference_time}.")
 
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         power = response.json().get('values', [])
-        
+
         latest_value = power[0].get('value', 0)
         return latest_value
 
@@ -142,14 +151,16 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             alerts = response.json()
             for alert in alerts:
                 site_id = cls.add_vendorcodeprefix(alert.get('siteId'))
-                alert_details = '' #FIXME
+                alert_details = ''  # FIXME
                 first_triggered_str = alert.get('firstTrigger')
                 # If the timestamp ends with a 'Z', replace it with '+00:00' for proper parsing
                 if first_triggered_str and first_triggered_str.endswith("Z"):
-                    first_triggered = datetime.fromisoformat(first_triggered_str.replace("Z", "+00:00"))
+                    first_triggered = datetime.fromisoformat(
+                        first_triggered_str.replace("Z", "+00:00"))
                 else:
                     first_triggered = first_triggered_str
-                solarAlert = SolarPlatform.SolarAlert(site_id, alert.get('type'), alert.get('impact'), alert_details, first_triggered)
+                solarAlert = SolarPlatform.SolarAlert(site_id, alert.get(
+                    'type'), alert.get('impact'), alert_details, first_triggered)
                 all_alerts.append(solarAlert)
 
             return all_alerts

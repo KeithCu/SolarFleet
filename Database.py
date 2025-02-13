@@ -8,6 +8,7 @@ from sklearn.neighbors import BallTree
 import SqlModels as Sql
 import SolarPlatform
 
+
 def add_site_if_not_exists(site_id, name, url, nearest_site_id, nearest_distance):
     session = Sql.SessionLocal()
 
@@ -32,6 +33,7 @@ def add_site_if_not_exists(site_id, name, url, nearest_site_id, nearest_distance
     session.close()
     return new_site
 
+
 def fetch_sites():
     session = Sql.SessionLocal()
     try:
@@ -39,6 +41,7 @@ def fetch_sites():
         return sites_df
     finally:
         session.close()
+
 
 def update_site_history(site_id, new_history):
     session = Sql.SessionLocal()
@@ -53,38 +56,41 @@ def update_site_history(site_id, new_history):
     finally:
         session.close()
 
+
 def add_alert_if_not_exists(site_id, name, url, alert_type, details, severity, first_triggered):
     with Sql.SessionLocal() as session:
         existing_alert = session.query(Sql.Alert).filter(
             Sql.Alert.site_id == site_id,
             Sql.Alert.alert_type == alert_type,
-            Sql.Alert.resolved_date.is_(None)  # Check for unresolved alerts (i.e., NULL)
+            # Check for unresolved alerts (i.e., NULL)
+            Sql.Alert.resolved_date.is_(None)
         ).first()
 
         if not existing_alert:
             now = datetime.utcnow()
-            
+
             new_alert = Sql.Alert(
-                site_id = site_id,
-                name = name,
-                url = url,
-                alert_type = alert_type,
-                details = details,
-                severity = severity,
-                first_triggered = first_triggered,
-                resolved_date = None,
+                site_id=site_id,
+                name=name,
+                url=url,
+                alert_type=alert_type,
+                details=details,
+                severity=severity,
+                first_triggered=first_triggered,
+                resolved_date=None,
             )
             session.add(new_alert)
             session.commit()
 
+
 def update_battery_data(site_id, serial_number, model_number, state_of_energy):
     session = Sql.SessionLocal()
-    
+
     existing_battery = session.query(Sql.Battery).filter(
         Sql.Battery.site_id == site_id,
         Sql.Battery.serial_number == serial_number
     ).first()
-    
+
     if existing_battery:
         existing_battery.state_of_energy = state_of_energy
         existing_battery.last_updated = datetime.utcnow()
@@ -97,11 +103,13 @@ def update_battery_data(site_id, serial_number, model_number, state_of_energy):
             last_updated=datetime.utcnow()
         )
         session.add(new_battery)
-    
+
     session.commit()
     session.close()
 
 # Battery Data Update Function
+
+
 def fetch_alerts():
     session = Sql.SessionLocal()
 
@@ -109,6 +117,7 @@ def fetch_alerts():
     alerts = pd.read_sql(query.statement, session.bind)
     session.close()
     return alerts
+
 
 def delete_all_alerts():
     session = Sql.SessionLocal()
@@ -120,20 +129,24 @@ def delete_all_alerts():
         raise e
     finally:
         session.close()
-        
+
+
 def fetch_low_batteries():
     session = Sql.SessionLocal()
-    query = session.query(Sql.Battery).filter((Sql.Battery.state_of_energy < 0.10) | (Sql.Battery.state_of_energy.is_(None)))
+    query = session.query(Sql.Battery).filter(
+        (Sql.Battery.state_of_energy < 0.10) | (Sql.Battery.state_of_energy.is_(None)))
     low_batteries = pd.read_sql(query.statement, session.bind)
     session.close()
     return low_batteries
 
+
 def fetch_all_batteries():
     session = Sql.SessionLocal()
-    query = session.query(Sql.Battery).order_by(Sql.Battery.state_of_energy.asc())
+    query = session.query(Sql.Battery).order_by(
+        Sql.Battery.state_of_energy.asc())
     all_batteries = pd.read_sql(query.statement, session.bind)
     session.close()
-    
+
 
 def get_total_noon_kw_all() -> List[Tuple[date, float]]:
     session = Sql.SessionLocal()
@@ -150,19 +163,21 @@ def get_total_noon_kw_all() -> List[Tuple[date, float]]:
 
     return all_batteries
 
+
 def get_production_set(production_day: date) -> set:
     session = Sql.SessionLocal()
     try:
-        #This doesn't respect the production_day for some reason, but does return data so is okay for now.
+        # This doesn't respect the production_day for some reason, but does return data so is okay for now.
         # Perhaps the day stored in the database is not exactly this time, but close?
-        #Anyway once I get the stuff displaying something, anything, reasonable, I can fix.
-        #record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
+        # Anyway once I get the stuff displaying something, anything, reasonable, I can fix.
+        # record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
         record = session.query(Sql.ProductionHistory).first()
         if record:
             return record.data
         return set()
     finally:
         session.close()
+
 
 def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord], production_day):
     session = Sql.SessionLocal()
@@ -177,13 +192,14 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
             # If no record exists, use a copy of new_data.
             combined_set = new_data.copy()
 
-        #calculate the total noon production for all sites, to use for historical purposes.
+        # calculate the total noon production for all sites, to use for historical purposes.
         total_noon_kw = 0
         for e in combined_set:
             total_noon_kw += e.production_kw
 
         # Create a fresh instance with the merged data.
-        new_record = Sql.ProductionHistory(production_day=production_day, data=combined_set, total_noon_kw=total_noon_kw)
+        new_record = Sql.ProductionHistory(
+            production_day=production_day, data=combined_set, total_noon_kw=total_noon_kw)
 
         # session.merge() will check if a record with the given primary key exists;
         # if so, it will update that record with new_record’s state, otherwise it will add a new record.
@@ -198,8 +214,7 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
         session.close()
 
 
-
-# Bulk process a list of SolarProduction data. 
+# Bulk process a list of SolarProduction data.
 
 # Parameters:
 #   - production_data: list of SolarProduction records.
@@ -217,14 +232,13 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
 #      (with the haversine metric) to compute for each new site the nearest neighbor’s vendor_code,
 #      site_id, and distance (in miles). These values are stored in the new record.
 
-
     # # If there are new records, build a BallTree over the combined dataset.
     # if new_to_insert:
     #     coords = np.array([[r["lat"], r["lon"]] for r in combined])
     #     coords_rad = np.radians(coords)
     #     tree = BallTree(coords_rad, metric='haversine')
     #     keys = [(r["vendor_code"], r["site_id"]) for r in combined]
-        
+
     #     # For each new record, compute the nearest neighbor.
     #     for rec in new_to_insert:
     #         new_key = (rec["vendor_code"], rec["site_id"])
@@ -243,23 +257,25 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
 
 
 def process_bulk_solar_production(
-    reference_date: date,
-    production_data: set[SolarPlatform.ProductionRecord], 
-    recalibrate: bool = False, 
-    sunny_threshold: float = 100.0):
+        reference_date: date,
+        production_data: set[SolarPlatform.ProductionRecord],
+        recalibrate: bool = False,
+        sunny_threshold: float = 100.0):
 
     if not production_data:
         print("No production data provided.")
         return
 
     # Compute average production for sanity check.
-    avg_prod = sum(prod.production_kw for prod in production_data) / len(production_data)
+    avg_prod = sum(prod.production_kw for prod in production_data) / \
+        len(production_data)
     # if avg_prod < sunny_threshold and not recalibrate:
     #     raise ValueError(
     #         f"Average production ({avg_prod:.2f}) is below the sunny threshold ({sunny_threshold}). "
     #         "Data rejected to prevent calibration on a cloudy day."
     #     )
-    
+
     insert_or_update_production_set(production_data, reference_date)
 
-    print(f"Processed {len(production_data)} records. Average production: {avg_prod:.2f}")
+    print(
+        f"Processed {len(production_data)} records. Average production: {avg_prod:.2f}")

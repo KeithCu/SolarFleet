@@ -1,3 +1,4 @@
+import pgeocode
 from abc import ABC, abstractmethod
 from zoneinfo import ZoneInfo
 import streamlit as st
@@ -11,7 +12,7 @@ import random
 import math
 from datetime import datetime, timedelta, time
 
-#Disk cache decorator to save remote API calls.
+# Disk cache decorator to save remote API calls.
 cache = diskcache.Cache(".")
 
 
@@ -21,11 +22,13 @@ class BatteryInfo:
     model_name: str
     state_of_energy: str
 
+
 class AlertType:
     NO_COMMUNICATION = "NO_COMMUNICATION"
     CONFIG_ERROR = "CONFIG_ERROR"
     HARDWARE_ERROR = "HARDWARE_ERROR"
     MLPE_ERROR = "MLPE_ERROR"
+
 
 @dataclass(frozen=True)
 class SolarAlert:
@@ -39,6 +42,7 @@ class SolarAlert:
         if not (0 <= self.severity <= 100):
             raise ValueError("Severity must be between 0 and 100.")
 
+
 @dataclass(frozen=True)
 class SiteInfo:
     site_id: str
@@ -48,19 +52,21 @@ class SiteInfo:
     latitude: float
     longitude: float
 
+
 def extract_vendor_code(site_id):
     if ':' in site_id:
         return site_id.split(':', 1)[0]
     else:
-        raise ValueError(f"Invalid site_id format: {site_id}. Expected a vendor code prefix followed by a colon.")            
+        raise ValueError(
+            f"Invalid site_id format: {site_id}. Expected a vendor code prefix followed by a colon.")
 
-#In Sqlite, for each day, we store a set of ProductionRecord objects, one for each site.
+# In Sqlite, for each day, we store a set of ProductionRecord objects, one for each site.
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str
     production_kw: float
 
-    #Two ProductionRecord objects are considered equal if they share the same vendor and site.
+    # Two ProductionRecord objects are considered equal if they share the same vendor and site.
     def __hash__(self):
         return hash((self.site_id))
 
@@ -69,8 +75,9 @@ class ProductionRecord:
             return NotImplemented
         return (self.site_id) == (other.site_id)
 
+
 class SolarPlatform(ABC):
-#    log_container = st.empty()  # A Streamlit container to display log messages
+    #    log_container = st.empty()  # A Streamlit container to display log messages
     log_text = ""  # A string to store cumulative log messages
 
     @classmethod
@@ -78,27 +85,27 @@ class SolarPlatform(ABC):
     def get_vendorcode(cls):
         pass
 
-    @classmethod 
+    @classmethod
     @abstractmethod
-    #Returns a dict of site_id (which contains a vendor code prefix) to SiteInfo objects
+    # Returns a dict of site_id (which contains a vendor code prefix) to SiteInfo objects
     def get_sites_map(cls) -> Dict[str, SiteInfo]:
         pass
 
     @classmethod
     @abstractmethod
-    #returns production in KW at a particular time
+    # returns production in KW at a particular time
     def get_production(cls, site_id, reference_time) -> float:
         pass
 
     @classmethod
     @abstractmethod
-    #returns a list of BatteryInfos for a site
+    # returns a list of BatteryInfos for a site
     def get_batteries_soe(cls, site_id) -> List[BatteryInfo]:
         pass
 
     @classmethod
     @abstractmethod
-    #Returns a list of SolarAlerts
+    # Returns a list of SolarAlerts
     def get_alerts(cls) -> List[SolarAlert]:
         pass
 
@@ -117,10 +124,10 @@ class SolarPlatform(ABC):
     @classmethod
     def log(cls, message: str, container=None):
         # Use the provided container or the default shared container.
- #       if container is not None:
- #           cls.log_container = container
+     #       if container is not None:
+     #           cls.log_container = container
 
- #       container = container if container is not None else cls.log_container
+     #       container = container if container is not None else cls.log_container
         # Print to the command line.
         formatted_str = pprint.pformat(message, depth=None, width=120)
         print(formatted_str)
@@ -130,16 +137,20 @@ class SolarPlatform(ABC):
         if container is not None:
             container.text(cls.log_text)
 
+
 CACHE_EXPIRE_HOUR = 3600
 CACHE_EXPIRE_DAY = CACHE_EXPIRE_HOUR * 24
 CACHE_EXPIRE_WEEK = CACHE_EXPIRE_DAY * 7
 CACHE_EXPIRE_YEAR = CACHE_EXPIRE_DAY * 365
 
-#Scatter monthly requests over a period of 10 days to avoid cache stampede.
+# Scatter monthly requests over a period of 10 days to avoid cache stampede.
+
+
 def CACHE_EXPIRE_MONTH():
     base = CACHE_EXPIRE_WEEK * 4
     offset = random.randint(-CACHE_EXPIRE_DAY * 5, CACHE_EXPIRE_DAY * 5)
     return base + offset
+
 
 def disk_cache(expiration_seconds):
     def decorator(func):
@@ -154,28 +165,27 @@ def disk_cache(expiration_seconds):
         return wrapper
     return decorator
 
-from datetime import datetime, timedelta, time
 
-#FIXME, harding codes Eastern timezone for now
+# FIXME, harding codes Eastern timezone for now
 def get_recent_noon() -> datetime:
 
     eastern = ZoneInfo("America/New_York")
     now = datetime.now(eastern)
     today = now.date()
-    
+
     # Define the threshold: today at 12:30 in Eastern Time.
     threshold = datetime.combine(today, time(12, 30), tzinfo=eastern)
-    
+
     if now >= threshold:
         measurement_date = today
     else:
         measurement_date = today - timedelta(days=1)
-    
+
     # Create a datetime for noon (5:00) on the chosen date in UTC.
     measurement_dt = datetime.combine(measurement_date, time(17, 0, 0, 0))
     return measurement_dt
 
-import pgeocode
+
 nomi = pgeocode.Nominatim('us')
 
 def haversine_distance(lat1, lon1, lat2, lon2):
@@ -183,9 +193,11 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
     dlat = lat2 - lat1
     dlon = lon2 - lon1
-    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * \
+        math.cos(lat2) * math.sin(dlon/2)**2
     c = 2 * math.asin(math.sqrt(a))
     return c * 3958.8  # Earth radius in miles
+
 
 @st.cache_data
 def get_coordinates(zip_code):
@@ -196,8 +208,10 @@ def get_coordinates(zip_code):
             result = nomi.query_postal_code(48071)
         return result.latitude, result.longitude
     except Exception as e:
-        print(f"Exception thrown trying to get coordinates for zip code: {zip_code}")
+        print(
+            f"Exception thrown trying to get coordinates for zip code: {zip_code}")
         return 42.5, -83.1
 
-#If you want to display fake data for screenshots
+
+# If you want to display fake data for screenshots
 FAKE_DATA = False
