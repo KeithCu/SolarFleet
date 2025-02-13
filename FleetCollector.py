@@ -31,13 +31,11 @@ def collect_platform(platform):
                 sites[site_id].zipcode)
 
             # This needs to be moved to later when we have the nearest site information
-            db.add_site_if_not_exists(
-                site_id, sites[site_id].name, site.url, "nearest_siteid", "nearest_distance")
+            db.add_site_if_not_exists(site_id, sites[site_id].name, site.url, "nearest_siteid", "nearest_distance")
 
             battery_data = platform.get_batteries_soe(site_id)
             for battery in battery_data:
-                db.update_battery_data(
-                    site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'])
+                db.update_battery_data(site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'])
 
             # Fetch production data and put into set
             site_production = platform.get_production(site_id, reference_date)

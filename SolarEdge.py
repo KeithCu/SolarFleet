@@ -8,7 +8,7 @@ import SolarPlatform
 from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
-SOLAREDGE_SITE_URL = 'https://monitoring.solaredge-web/p/site/'
+SOLAREDGE_SITE_URL = 'https://monitoring.solaredge.com/solaredge-web/p/site/'
 
 SOLAREDGE_HEADERS = {
     "X-API-Key": SOLAREDGE_V2_API_KEY,

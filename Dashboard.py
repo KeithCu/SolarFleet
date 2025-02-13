@@ -236,6 +236,12 @@ st.header("🚨 Active Alerts")
 alerts_df = db.fetch_alerts()
 sites_history_df = db.fetch_sites()[["site_id", "history"]]
 
+platform = SolarEdgePlatform()
+sites = platform.get_sites_map()
+
+site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
+site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
+
 if not alerts_df.empty:
     # Filter out unwanted alert types
     alerts_df = alerts_df[alerts_df['alert_type'] != 'SNOW_ON_SITE']
@@ -295,14 +301,51 @@ else:
 st.header("🔋 Batteries Below 10%")
 low_batteries_df = db.fetch_low_batteries()
 if not low_batteries_df.empty:
-    st.dataframe(low_batteries_df, height=300)
+    # Merge battery info with site data to include 'name' and 'url'
+    low_batteries_df = low_batteries_df.merge(
+        site_df[['site_id', 'name', 'url']],
+        on="site_id",
+        how="left"
+    )
+    # Reorder columns: site_id, name, url first, then the rest.
+    cols = low_batteries_df.columns.tolist()
+    new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
+    low_batteries_df = low_batteries_df[new_order]
+    
+    st.data_editor(
+        low_batteries_df,
+        key="low_batteries_editor",
+        use_container_width=True,
+        column_config={
+            "url": st.column_config.LinkColumn(label="Site URL", display_text="Link")
+        },
+        disabled=True
+    )
 else:
     st.success("All batteries above 10%.")
 
 with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
     all_batteries_df = db.fetch_all_batteries()
     if all_batteries_df is not None and not all_batteries_df.empty:
-        st.dataframe(all_batteries_df, height=400)
+        all_batteries_df = all_batteries_df.merge(
+            site_df[['site_id', 'name', 'url']],
+            on="site_id",
+            how="left"
+        )
+        # Reorder columns: site_id, name, url first, then the rest.
+        cols = all_batteries_df.columns.tolist()
+        new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
+        all_batteries_df = all_batteries_df[new_order]
+        
+        st.data_editor(
+            all_batteries_df,
+            key="all_batteries_editor",
+            use_container_width=True,
+            column_config={
+                "url": st.column_config.LinkColumn(label="Site URL", display_text="Link")
+            },
+            disabled=True
+        )
     else:
         st.success("No battery data available.")
 
@@ -310,13 +353,6 @@ st.header("🌍 Site Map with Production Data")
 
 production_set = db.get_production_set(SolarPlatform.get_recent_noon())
 df = pd.DataFrame([asdict(record) for record in production_set])
-
-platform = SolarEdgePlatform()
-sites = platform.get_sites_map()
-
-site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
-site_df["vendor_code"] = site_df["site_id"].apply(
-    SolarPlatform.extract_vendor_code)
 
 if not df.empty and 'latitude' in site_df.columns:
     site_df = site_df.merge(df, on="site_id", how="left")
