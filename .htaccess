@@ -1,0 +1,4 @@
+<Files "api_keys.py">
+    Order Allow,Deny
+    Deny from all
+</Files>
