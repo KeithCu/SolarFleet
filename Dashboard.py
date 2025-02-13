@@ -67,7 +67,11 @@ def create_map_view(sites_df):
         
         marker_coords.append([lat, lon])
         
-        color = "#FF0000" if row['production_kw'] == 0 else "#2A81CB"
+        if np.isnan(row['production_kw']) or row['production_kw'] < 0.1:
+            color = "#FF0000" 
+        else:
+            color = "#2A81CB"
+
         popup_html = (
             f"<strong>{row['name']} ({row['site_id']})</strong><br>"
             f"Production: {row['production_kw']} W"
