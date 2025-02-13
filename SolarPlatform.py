@@ -11,6 +11,9 @@ from typing import Optional
 import random
 import math
 from datetime import datetime, timedelta, time
+import keyring
+
+import api_keys
 
 # Disk cache decorator to save remote API calls.
 cache = diskcache.Cache(".")
@@ -208,6 +211,31 @@ def get_coordinates(zip_code):
         print(
             f"Exception thrown trying to get coordinates for zip code: {zip_code}")
         return 42.5, -83.1
+
+def set_keyring_from_api_keys():
+    """Sets API keys in the keyring based on variables in api_keys.py."""
+    try:
+
+        keyring.set_password("enphase", "client_id", api_keys.ENPHASE_CLIENT_ID)
+        keyring.set_password("enphase", "client_secret", api_keys.ENPHASE_CLIENT_SECRET)
+        keyring.set_password("enphase", "api_key", api_keys.ENPHASE_API_KEY)
+        keyring.set_password("enphase", "user_email", api_keys.ENPHASE_USER_EMAIL)
+        keyring.set_password("enphase", "user_password", api_keys.ENPHASE_USER_PASSWORD)
+
+        # SolarEdge Keys (Storing individually)
+        keyring.set_password("solaredge", "account_key", api_keys.SOLAREDGE_V2_ACCOUNT_KEY)
+        keyring.set_password("solaredge", "api_key", api_keys.SOLAREDGE_V2_API_KEY)
+
+        keyring.set_password("solark", "email", api_keys.SOLARK_EMAIL)
+        keyring.set_password("solark", "password", api_keys.SOLARK_PASSWORD) 
+
+        print("API keys set in keyring.")
+
+    except AttributeError as e:
+        print(f"Error: Missing API key in api_keys.py: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
 
 
 # If you want to display fake data for screenshots

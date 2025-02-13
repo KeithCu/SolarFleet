@@ -15,8 +15,6 @@ import Database as db
 from FleetCollector import collect_platform, run_collection
 from SolarEdge import SolarEdgePlatform
 
-from api_keys import STREAMLIT_PASSWORD
-
 # to do:
 
 # General
@@ -181,7 +179,7 @@ def filter_and_sort_alerts(alerts_df, alert_filter, severity_filter, sort_by, as
 def login():
     password = st.text_input("Enter the password", type="password")
     if st.button("Login"):
-        if password == STREAMLIT_PASSWORD:
+        if password == "secret_password":
             st.session_state.authenticated = True
             st.success("Logged in successfully!")
         else:
@@ -222,10 +220,9 @@ st.set_page_config(page_title="Absolute Solar Monitoring", layout="wide")
 Sql.init_fleet_db()
 st.title("☀️Absolute Solar Monitoring Dashboard")
 
-import streamlit as st
 
 # Create columns
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 # Place buttons in columns
 with col1:
@@ -238,6 +235,18 @@ with col2:
         st.success("All alerts deleted!")
 
 with col3:
+    if st.button("Delete Alerts Cache"):
+        # Find cache keys that start with 'get_alerts'
+        alerts_cache_keys = [
+            key for key in SolarPlatform.cache.iterkeys()
+            if key.startswith("get_alerts")
+        ]
+        # Delete each matching key from the cache
+        for key in alerts_cache_keys:
+            del SolarPlatform.cache[key]
+        st.success("Alerts cache cleared!")
+
+with col4:
     if st.button("Delete Battery Cache"):
         # Delete cache entries for battery data.
         battery_keys = [
@@ -248,6 +257,10 @@ with col3:
         for key in battery_keys:
             del SolarPlatform.cache[key]
         st.success("Battery cache cleared!")
+with col5:
+    if st.button("convert api_keys to keyring"):
+        SolarPlatform.set_keyring_from_api_keys()
+
 
 st.markdown("---")
 
@@ -258,6 +271,8 @@ sites_history_df = db.fetch_sites()[["site_id", "history"]]
 
 platform = SolarEdgePlatform()
 sites = platform.get_sites_map()
+
+platform.log("Starting application at " + str(datetime.now()))
 
 site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
 site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)

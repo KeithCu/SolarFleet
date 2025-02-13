@@ -4,18 +4,36 @@ import requests
 import random
 import streamlit as st
 
+import keyring
 import SolarPlatform
-from api_keys import SOLAREDGE_V2_API_KEY, SOLAREDGE_V2_ACCOUNT_KEY
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
 SOLAREDGE_SITE_URL = 'https://monitoring.solaredge.com/solaredge-web/p/site/'
 
-SOLAREDGE_HEADERS = {
-    "X-API-Key": SOLAREDGE_V2_API_KEY,
-    "Accept": "application/json",
-    "X-Account-Key": SOLAREDGE_V2_ACCOUNT_KEY
-}
+def fetch_solaredge_keys():
+    """Fetches SolarEdge API keys from the keyring."""
+    try:
+        account_key = keyring.get_password("solaredge", "account_key")
+        api_key = keyring.get_password("solaredge", "api_key")
 
+        if any(key is None for key in [account_key, api_key]):
+            raise ValueError("Missing SolarEdge key(s) in keyring.")
+
+        return {
+            "account_key": account_key,
+            "api_key": api_key,
+        }
+    except Exception as e:
+        print(f"Error fetching SolarEdge keys: {e}")
+        return None
+    
+solaredge_keys = fetch_solaredge_keys()
+
+SOLAREDGE_HEADERS = {
+        "X-API-Key": solaredge_keys["api_key"],
+        "Accept": "application/json",
+        "X-Account-Key": solaredge_keys["account_key"],
+    }
 
 class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     @classmethod

@@ -2,9 +2,9 @@ from enum import Enum
 import time
 import requests
 import base64
+import keyring
 from datetime import datetime
-from api_keys import ENPHASE_CLIENT_ID, ENPHASE_CLIENT_SECRET, ENPHASE_API_KEY, \
-    ENPHASE_USER_EMAIL, ENPHASE_USER_PASSWORD
+from dataclasses import dataclass
 
 import SolarPlatform
 
@@ -13,6 +13,37 @@ ENPHASE_TOKENS = "Enphase Tokens"
 ENPHASE_SITE_URL = "https://enphaseenergy.com/systems/"
 
 
+@dataclass(frozen=True)
+class EnphaseKeys:
+    client_id: str
+    client_secret: str
+    api_key: str
+    user_email: str
+    user_password: str
+
+def fetch_enphase_keys():
+    """Fetches Enphase API keys from the keyring and returns an EnphaseKeys dataclass.
+       Raises ValueError if any keys are missing.
+    """
+    client_id = keyring.get_password("enphase", "client_id")
+    client_secret = keyring.get_password("enphase", "client_secret")
+    api_key = keyring.get_password("enphase", "api_key")
+    user_email = keyring.get_password("enphase", "user_email")
+    user_password = keyring.get_password("enphase", "user_password")
+
+    if any(key is None for key in [client_id, client_secret, api_key, user_email, user_password]):
+        raise ValueError("Missing Enphase key(s) in keyring.")
+
+    return EnphaseKeys(
+        client_id=client_id,
+        client_secret=client_secret,
+        api_key=api_key,
+        user_email=user_email,
+        user_password=user_password,
+    )
+    
+ENPHASE_KEYS = fetch_enphase_keys()
+    
 # Shared standard error codes across vendors.
 
 class StandardErrorCodes(Enum):
@@ -50,7 +81,7 @@ class EnphasePlatform(SolarPlatform):
                 "password": password
             }
         headers = EnphasePlatform.get_basic_auth_header(
-            ENPHASE_CLIENT_ID, ENPHASE_CLIENT_SECRET)
+            ENPHASE_KEYS.client_id, ENPHASE_KEYS.client_secret)
         try:
             response = requests.post(url, data=data, headers=headers)
             response.raise_for_status()
@@ -71,7 +102,7 @@ class EnphasePlatform(SolarPlatform):
                 return stored_access_token
         # Try to authenticate
         access_token, new_refresh_token, expires_in = cls.authenticate_enphase(
-            ENPHASE_USER_EMAIL, ENPHASE_USER_PASSWORD)
+            ENPHASE_KEYS.user_email, ENPHASE_KEYS.user_password)
         if access_token:
             expires_at = current_time + expires_in
             SolarPlatform.cache.set(ENPHASE_TOKENS, (access_token, new_refresh_token,
@@ -87,7 +118,7 @@ class EnphasePlatform(SolarPlatform):
         access_token = cls._get_access_token()
         if not access_token:
             return {}
-        url = f"{ENPHASE_BASE_URL}/api/v4/systems?key={ENPHASE_API_KEY}"
+        url = f"{ENPHASE_BASE_URL}/api/v4/systems?key={ENPHASE_KEYS.api_key}"
         headers = {"Authorization": f"Bearer {access_token}"}
         try:
             response = requests.get(url, headers=headers)
@@ -144,7 +175,7 @@ class EnphasePlatform(SolarPlatform):
         access_token = cls._get_access_token()
         if not access_token:
             return []
-        url = f"{ENPHASE_BASE_URL}/api/v4/systems/{raw_system_id}/devices?key={ENPHASE_API_KEY}"
+        url = f"{ENPHASE_BASE_URL}/api/v4/systems/{raw_system_id}/devices?key={ENPHASE_KEYS.api_key}"
         headers = {"Authorization": f"Bearer {access_token}"}
         try:
             SolarPlatform.log(
@@ -205,7 +236,7 @@ class EnphasePlatform(SolarPlatform):
         access_token = cls._get_access_token()
         if not access_token:
             return []
-        url = f"{ENPHASE_BASE_URL}/api/v4/systems?key={ENPHASE_API_KEY}"
+        url = f"{ENPHASE_BASE_URL}/api/v4/systems?key={ENPHASE_KEYS.api_key}"
         headers = {"Authorization": f"Bearer {access_token}"}
         try:
             SolarPlatform.log("Fetching Enphase systems for alert processing.")
