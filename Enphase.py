@@ -128,7 +128,6 @@ class EnphasePlatform(SolarPlatform):
             SolarPlatform.log(f"Failed to retrieve production data for system {raw_system_id}: {e}")
             return 0.0
 
-    # Separate call for fetching battery metadata (cached for a month)
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_MONTH())
     def get_batteries_metadata(cls, raw_system_id) -> list:
