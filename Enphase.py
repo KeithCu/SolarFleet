@@ -2,17 +2,19 @@ import time
 import requests
 import base64
 from datetime import datetime
-from api_keys import ENPHASE_CLIENT_ID, ENPHASE_CLIENT_SECRET, ENPHASE_API_KEY, ENPHASE_USER_EMAIL, ENPHASE_USER_PASSWORD
+from api_keys import ENPHASE_CLIENT_ID, ENPHASE_CLIENT_SECRET, ENPHASE_API_KEY, \
+                     ENPHASE_USER_EMAIL, ENPHASE_USER_PASSWORD
 
 import SolarPlatform
 
-ENPHASE_BASE_URL = "https://api.enphaseenergy.com" 
-ENPHASE_TOKENS = "Enphase Tokens" 
+ENPHASE_BASE_URL = "https://api.enphaseenergy.com"
+ENPHASE_TOKENS = "Enphase Tokens"
 ENPHASE_SITE_URL = "https://enphaseenergy.com/systems/"
 
 from enum import Enum
 
-class StandardErrorCodes(Enum): 
+# Shared standard error codes across vendors.
+class StandardErrorCodes(Enum):
     NO_COMMUNICATION = "NO_COMMUNICATION"
     CONFIG_ERROR = "CONFIG_ERROR"
     HARDWARE_ERROR = "HARDWARE_ERROR"
@@ -126,44 +128,62 @@ class EnphasePlatform(SolarPlatform):
             SolarPlatform.log(f"Failed to retrieve production data for system {raw_system_id}: {e}")
             return 0.0
 
+    # Separate call for fetching battery metadata (cached for a month)
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_MONTH())
-    def get_batteries_soe(cls, site_id) -> list:
+    def get_batteries_metadata(cls, raw_system_id) -> list:
         access_token = cls._get_access_token()
         if not access_token:
             return []
-        raw_system_id = cls.strip_vendorcodeprefix(site_id)
-        devices_url = f"{ENPHASE_BASE_URL}/api/v4/systems/{raw_system_id}/devices?key={ENPHASE_API_KEY}"
+        url = f"{ENPHASE_BASE_URL}/api/v4/systems/{raw_system_id}/devices?key={ENPHASE_API_KEY}"
         headers = {"Authorization": f"Bearer {access_token}"}
         try:
-            SolarPlatform.log(f"Fetching devices from Enphase API for system {raw_system_id}.")
-            response = requests.get(devices_url, headers=headers)
+            SolarPlatform.log(f"Fetching devices from Enphase API for system {raw_system_id} (metadata).")
+            response = requests.get(url, headers=headers)
             response.raise_for_status()
             devices = response.json().get("devices", [])
             battery_devices = [device for device in devices if device.get("type", "").lower() == "encharge"]
-            battery_states = []
-            for battery in battery_devices:
-                serial_number = battery.get("serial_number")
-                model = battery.get("model", "Unknown")
-                telemetry_url = f"{ENPHASE_BASE_URL}/api/v4/systems/{raw_system_id}/devices/encharges/{serial_number}/telemetry?key={ENPHASE_API_KEY}"
-                try:
-                    SolarPlatform.log(f"Fetching battery telemetry for system {raw_system_id}, battery {serial_number}.")
-                    telemetry_response = requests.get(telemetry_url, headers=headers)
-                    telemetry_response.raise_for_status()
-                    telemetry_data = telemetry_response.json()
-                    soe = telemetry_data.get("state_of_charge")
-                except requests.exceptions.RequestException as e:
-                    SolarPlatform.log(f"Failed to retrieve telemetry for battery {serial_number} in system {raw_system_id}: {e}")
-                    soe = None
-                battery_states.append({
-                    "serialNumber": serial_number,
-                    "model": model,
-                    "stateOfEnergy": soe
-                })
-            return battery_states
+            return battery_devices
         except requests.exceptions.RequestException as e:
             SolarPlatform.log(f"Failed to retrieve devices for system {raw_system_id}: {e}")
             return []
+
+    # Separate call for fetching battery SOE (cached for a shorter period)
+    @classmethod
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
+    def get_battery_state_of_energy(cls, raw_system_id, serial_number):
+        access_token = cls._get_access_token()
+        if not access_token:
+            return None
+        url = f"{ENPHASE_BASE_URL}/api/v4/systems/{raw_system_id}/devices/encharges/{serial_number}/telemetry?key={ENPHASE_API_KEY}"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        try:
+            SolarPlatform.log(f"Fetching battery telemetry for system {raw_system_id}, battery {serial_number}.")
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            telemetry_data = response.json()
+            soe = telemetry_data.get("state_of_charge")
+            return soe
+        except requests.exceptions.RequestException as e:
+            SolarPlatform.log(f"Failed to retrieve telemetry for battery {serial_number} in system {raw_system_id}: {e}")
+            return None
+
+    # get_batteries_soe now first retrieves cached metadata, then queries telemetry individually.
+    @classmethod
+    def get_batteries_soe(cls, site_id) -> list:
+        raw_system_id = cls.strip_vendorcodeprefix(site_id)
+        batteries = cls.get_batteries_metadata(raw_system_id)
+        battery_states = []
+        for battery in batteries:
+            serial_number = battery.get("serial_number")
+            model = battery.get("model", "Unknown")
+            soe = cls.get_battery_state_of_energy(raw_system_id, serial_number)
+            battery_states.append({
+                "serialNumber": serial_number,
+                "model": model,
+                "stateOfEnergy": soe
+            })
+        return battery_states
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
@@ -195,9 +215,9 @@ class EnphasePlatform(SolarPlatform):
             SolarPlatform.log(f"Failed to retrieve alerts from Enphase API: {e}")
             return []
 
-if __name__ == "main": 
+if __name__ == "__main__":
     access_token = EnphasePlatform._get_access_token()
-    if not access_token: 
+    if not access_token:
         SolarPlatform.log("Unable to authenticate with Enphase API.")
         exit(1)
     sites = EnphasePlatform.get_sites_map()
@@ -209,4 +229,5 @@ if __name__ == "main":
         print("Battery Data:", battery_data)
         alerts = EnphasePlatform.get_alerts()
         print("Alerts:", alerts)
-    else: SolarPlatform.log("No systems found in Enphase account.")
+    else:
+        SolarPlatform.log("No systems found in Enphase account.")
