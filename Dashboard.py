@@ -167,17 +167,18 @@ st.markdown("---")
 st.header("🚨 Active Alerts")
 
 alerts_df = db.fetch_alerts()
-# Retrieve site history from the database
 sites_history_df = db.fetch_sites()[["site_id", "history"]]
 
 if not alerts_df.empty:
     # Filter out unwanted alert types
     alerts_df = alerts_df[alerts_df['alert_type'] != 'SNOW_ON_SITE']
-
+    
+    # Merge site history once for all alerts
+    merged_alerts_df = alerts_df.merge(sites_history_df, on="site_id", how="left")
+    
     # --- Site Production failure ---
     st.header("Site Production failure")
-    production_df = alerts_df[alerts_df['alert_type'] == 'INVERTER_BELOW_THRESHOLD_LIMIT']
-    production_df = production_df.merge(sites_history_df, on="site_id", how="left")
+    production_df = merged_alerts_df[merged_alerts_df['alert_type'] == 'INVERTER_BELOW_THRESHOLD_LIMIT']
     edited_production_df = st.data_editor(
         production_df,
         key="production_production",
@@ -191,12 +192,11 @@ if not alerts_df.empty:
     if st.button("Save Production Site History Updates", key="save_prod_history"):
         for _, row in edited_production_df.iterrows():
             db.update_site_history(row['site_id'], row['history'])
-    alerts_df = alerts_df[alerts_df['alert_type'] != 'INVERTER_BELOW_THRESHOLD_LIMIT']
-
+    merged_alerts_df = merged_alerts_df[merged_alerts_df['alert_type'] != 'INVERTER_BELOW_THRESHOLD_LIMIT']
+    
     # --- Site Communication failure ---
     st.header("Site Communication failure")
-    comms_df = alerts_df[alerts_df['alert_type'] == 'SITE_COMMUNICATION_FAULT']
-    comms_df = comms_df.merge(sites_history_df, on="site_id", how="left")
+    comms_df = merged_alerts_df[merged_alerts_df['alert_type'] == 'SITE_COMMUNICATION_FAULT']
     comms_df = comms_df.drop(columns=["alert_type", "details", "severity"])
     edited_comms_df = st.data_editor(
         comms_df,
@@ -213,12 +213,11 @@ if not alerts_df.empty:
     if st.button("Save Communication Site History Updates", key="save_comms_history"):
         for _, row in edited_comms_df.iterrows():
             db.update_site_history(row['site_id'], row['history'])
-    alerts_df = alerts_df[alerts_df['alert_type'] != 'SITE_COMMUNICATION_FAULT']
-
+    merged_alerts_df = merged_alerts_df[merged_alerts_df['alert_type'] != 'SITE_COMMUNICATION_FAULT']
+    
     # --- Panel-level failures ---
     st.header("Panel-level failures")
-    panel_df = alerts_df[alerts_df['alert_type'] == 'PANEL_COMMUNICATION_FAULT']
-    panel_df = panel_df.merge(sites_history_df, on="site_id", how="left")
+    panel_df = merged_alerts_df[merged_alerts_df['alert_type'] == 'PANEL_COMMUNICATION_FAULT']
     edited_panel_df = st.data_editor(
         panel_df,
         key="panel_editor",
@@ -232,13 +231,11 @@ if not alerts_df.empty:
     if st.button("Save Panel Site History Updates", key="save_panel_history"):
         for _, row in edited_panel_df.iterrows():
             db.update_site_history(row['site_id'], row['history'])
-
-    alerts_df = alerts_df[alerts_df['alert_type'] != 'PANEL_COMMUNICATION_FAULT']
-
+    merged_alerts_df = merged_alerts_df[merged_alerts_df['alert_type'] != 'PANEL_COMMUNICATION_FAULT']
+    
     # --- System Configuration failure ---
     st.header("System Configuration failure")
-    sysconf_df = alerts_df.copy()
-    sysconf_df = sysconf_df.merge(sites_history_df, on="site_id", how="left")
+    sysconf_df = merged_alerts_df.copy()
     edited_sysconf_df = st.data_editor(
         sysconf_df,
         key="sysconf_editor",
