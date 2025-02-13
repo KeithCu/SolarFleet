@@ -229,6 +229,17 @@ if st.button("Delete All Alerts (Test)"):
     db.delete_all_alerts()
     st.success("All alerts deleted!")
 
+if st.button("Delete Battery Cache"):
+    # Delete cache entries for battery data.
+    battery_keys = [
+        key
+        for key in SolarPlatform.cache.iterkeys()
+        if key.startswith("get_battery_state_of_energy")
+    ]
+    for key in battery_keys:
+        del SolarPlatform.cache[key]
+    st.success("Battery cache cleared!")
+
 st.markdown("---")
 
 st.header("🚨 Active Alerts")
