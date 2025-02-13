@@ -72,18 +72,16 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/devices'
         params = {"types": ["BATTERY"]}
 
-        cls.log(
-            f"Fetching site / battery inventory data from SolarEdge API for site {raw_site_id}.")
+        cls.log(f"Fetching site / battery inventory data from SolarEdge API for site {raw_site_id}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
 
-        batteries = [device for device in devices if device.get(
-            'type') == 'BATTERY']
+        batteries = [device for device in devices if device.get('type') == 'BATTERY']
         return batteries
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_DAY)
     def get_battery_state_of_energy(cls, raw_site_id, serial_number):
         start_time = datetime.utcnow()
         end_time = start_time + timedelta(minutes=15)
@@ -92,8 +90,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         params = {'from': start_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
                   'resolution': 'QUARTER_HOUR', 'unit': 'PERCENTAGE'}
 
-        cls.log(
-            f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
+        cls.log(f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         soe_data = response.json().get('values', [])
@@ -128,8 +125,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         params = {'from': reference_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
                   'resolution': 'QUARTER_HOUR', 'unit': 'KW'}
 
-        cls.log(
-            f"Fetching production data from SolarEdge API for site {raw_site_id} at {reference_time}.")
+        cls.log(f"Fetching production data from SolarEdge API for site {raw_site_id} at {reference_time}.")
 
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()

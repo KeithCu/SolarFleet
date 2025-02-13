@@ -216,11 +216,6 @@ def process_alert_section(df, header_title, editor_key, save_button_label, colum
         df = df[df['alert_type'] != alert_type]
     return df
 
-
-def assign_site_type(site_id):
-    return site_id[:2]
-
-
 # Main Streamlit UI
 
 st.set_page_config(page_title="Absolute Solar Monitoring", layout="wide")

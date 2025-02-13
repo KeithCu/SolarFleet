@@ -77,7 +77,7 @@ class ProductionRecord:
 
 
 class SolarPlatform(ABC):
-    #    log_container = st.empty()  # A Streamlit container to display log messages
+    log_container = None # st.empty() A Streamlit container to display log messages
     log_text = ""  # A string to store cumulative log messages
 
     @classmethod
@@ -122,21 +122,18 @@ class SolarPlatform(ABC):
             return site_id
 
     @classmethod
-    def log(cls, message: str, container=None):
-        # Use the provided container or the default shared container.
-     #       if container is not None:
-     #           cls.log_container = container
-
-     #       container = container if container is not None else cls.log_container
+    def log(cls, message: str):
         # Print to the command line.
         formatted_str = pprint.pformat(message, depth=None, width=120)
         print(formatted_str)
-        # Append the message to the class-level log text.
-        cls.log_text += message + "\n"
-        # Update the shared Streamlit container.
-        if container is not None:
-            container.text(cls.log_text)
 
+        if cls.log_container is None:
+            cls.log_container = st.empty()
+
+        # Append the message to the class-level log text.
+        cls.log_text += formatted_str + "\n"
+
+        cls.log_container.text(cls.log_text)
 
 CACHE_EXPIRE_HOUR = 3600
 CACHE_EXPIRE_DAY = CACHE_EXPIRE_HOUR * 24
