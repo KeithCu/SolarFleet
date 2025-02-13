@@ -184,7 +184,7 @@ if not alerts_df.empty:
             )
         }
     )
-    if st.button("Save Production Site History Updates", key="save_prod_history"):
+    if st.button("Save Production Site History Updatez", key="save_prod_history"):
         for _, row in edited_production_df.iterrows():
             db.update_site_history(row['site_id'], row['history'])
     alerts_df = alerts_df[alerts_df['alert_type'] != 'INVERTER_BELOW_THRESHOLD_LIMIT']
@@ -193,6 +193,7 @@ if not alerts_df.empty:
     st.header("Site Communication failure")
     comms_df = alerts_df[alerts_df['alert_type'] == 'SITE_COMMUNICATION_FAULT']
     comms_df = comms_df.merge(sites_history_df, on="site_id", how="left")
+    comms_df = comms_df.drop(columns=["alert_type", "details", "severity"])
     edited_comms_df = st.data_editor(
         comms_df,
         key="comms_editor",
@@ -225,6 +226,7 @@ if not alerts_df.empty:
     if st.button("Save Panel Site History Updates", key="save_panel_history"):
         for _, row in edited_panel_df.iterrows():
             db.update_site_history(row['site_id'], row['history'])
+
     alerts_df = alerts_df[alerts_df['alert_type'] != 'PANEL_COMMUNICATION_FAULT']
 
     # --- System Configuration failure ---
