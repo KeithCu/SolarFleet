@@ -192,3 +192,6 @@ def get_coordinates(zip_code):
     except Exception as e:
         print(f"Exception thrown trying to get coordinates for zip code: {zip_code}")
         return 42.5, -83.1
+
+#If you want to display fake data for screenshots
+FAKE_DATA = False

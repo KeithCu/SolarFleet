@@ -14,8 +14,6 @@ import SqlModels as Sql
 import SolarPlatform
 import Database as db
 
-# Initialize database
-
 def update_alert_history(system_id, alert_type, message):
     pass
 
@@ -23,7 +21,6 @@ from SolarEdge import SolarEdgePlatform
 
 def collect_platform(platform):
     sites = None
-    platform.log("Testing get_sites_map() API call...")
     production_set = set()
     reference_date = SolarPlatform.get_recent_noon()
     sites = platform.get_sites_map()

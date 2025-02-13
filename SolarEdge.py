@@ -53,8 +53,12 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             site_id = cls.add_vendorcodeprefix(site.get('siteId'))
             site_url = SOLAREDGE_SITE_URL + str(site_id)
             zipcode = site['location']['zip']
+            name = site.get('name')
+            if SolarPlatform.FAKE_DATA:
+                name = str(random.randint(1000, 9999)) + " Main St"
+
             latitude, longitude = SolarPlatform.get_coordinates(zipcode)
-            site_info = SolarPlatform.SiteInfo(site_id, site.get('name'), site_url, zipcode, latitude, longitude)
+            site_info = SolarPlatform.SiteInfo(site_id, name, site_url, zipcode, latitude, longitude)
             sites_dict[site_id] = site_info
                 
         return sites_dict
@@ -80,12 +84,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         end_time = start_time + timedelta(minutes=15)
         
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/storage/{serial_number}/state-of-energy'
-        params = {
-            'from': start_time.isoformat() + 'Z',
-            'to': end_time.isoformat() + 'Z',
-            'resolution': 'QUARTER_HOUR',
-            'unit': 'PERCENTAGE'
-        }
+        params = { 'from': start_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
+            'resolution': 'QUARTER_HOUR', 'unit': 'PERCENTAGE' }
         
         cls.log(f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
@@ -106,11 +106,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             serial_number = battery.get('serialNumber')
             soe = cls.get_battery_state_of_energy(raw_site_id, serial_number)
             
-            battery_states.append({
-                'serialNumber': serial_number,
-                'model': battery.get('model'),
-                'stateOfEnergy': soe
-            })
+            battery_states.append({'serialNumber': serial_number, 'model': battery.get('model'), 'stateOfEnergy': soe })
         
         return battery_states
 
@@ -120,14 +116,10 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         site_id = cls.strip_vendorcodeprefix(site_id)
 
         end_time = reference_time + timedelta(minutes=15)
-
         url = SOLAREDGE_BASE_URL + f'/sites/{site_id}/power'    
-        params = {
-            'from': reference_time.isoformat() + 'Z',
-            'to': end_time.isoformat() + 'Z',
-            'resolution': 'QUARTER_HOUR',
-            'unit': 'KW'
-        }
+        params = {'from': reference_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
+                  'resolution': 'QUARTER_HOUR', 'unit': 'KW' }
+        
         cls.log(f"Fetching production data from SolarEdge API for site {site_id} at {reference_time}.")
 
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
