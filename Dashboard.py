@@ -222,23 +222,32 @@ st.set_page_config(page_title="Absolute Solar Monitoring", layout="wide")
 Sql.init_fleet_db()
 st.title("☀️Absolute Solar Monitoring Dashboard")
 
-if st.button("Run Collection"):
-    run_collection()
+import streamlit as st
 
-if st.button("Delete All Alerts (Test)"):
-    db.delete_all_alerts()
-    st.success("All alerts deleted!")
+# Create columns
+col1, col2, col3 = st.columns(3)
 
-if st.button("Delete Battery Cache"):
-    # Delete cache entries for battery data.
-    battery_keys = [
-        key
-        for key in SolarPlatform.cache.iterkeys()
-        if key.startswith("get_battery_state_of_energy")
-    ]
-    for key in battery_keys:
-        del SolarPlatform.cache[key]
-    st.success("Battery cache cleared!")
+# Place buttons in columns
+with col1:
+    if st.button("Run Collection"):
+        run_collection()
+
+with col2:
+    if st.button("Delete All Alerts (Test)"):
+        db.delete_all_alerts()
+        st.success("All alerts deleted!")
+
+with col3:
+    if st.button("Delete Battery Cache"):
+        # Delete cache entries for battery data.
+        battery_keys = [
+            key
+            for key in SolarPlatform.cache.iterkeys()
+            if key.startswith("get_battery_state_of_energy")
+        ]
+        for key in battery_keys:
+            del SolarPlatform.cache[key]
+        st.success("Battery cache cleared!")
 
 st.markdown("---")
 
