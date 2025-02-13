@@ -113,14 +113,14 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
     def get_production(cls, site_id, reference_time):
-        site_id = cls.strip_vendorcodeprefix(site_id)
+        raw_site_id = cls.strip_vendorcodeprefix(site_id)
 
         end_time = reference_time + timedelta(minutes=15)
-        url = SOLAREDGE_BASE_URL + f'/sites/{site_id}/power'    
+        url = SOLAREDGE_BASE_URL + f'/sites/{raw_site_id}/power'    
         params = {'from': reference_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
                   'resolution': 'QUARTER_HOUR', 'unit': 'KW' }
         
-        cls.log(f"Fetching production data from SolarEdge API for site {site_id} at {reference_time}.")
+        cls.log(f"Fetching production data from SolarEdge API for site {raw_site_id} at {reference_time}.")
 
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
