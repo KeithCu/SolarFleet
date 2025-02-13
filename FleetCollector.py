@@ -19,6 +19,7 @@ from SolarEdge import SolarEdgePlatform
 
 def collect_platform(platform):
     sites = None
+    platform.log("Starting collection")
     production_set = set()
     reference_date = SolarPlatform.get_recent_noon()
     sites = platform.get_sites_map()
