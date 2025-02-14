@@ -63,7 +63,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return all_sites
 
     @classmethod
-    @st.cache_data  # In-memory cache
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
     def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         sites = cls.get_sites_list()
 
