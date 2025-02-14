@@ -165,7 +165,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
-    def get_production(cls, site_id, reference_time) -> float:
+    def _get_raw_production(cls, site_id, reference_time) -> float:
         access_token = cls._get_access_token()
         if not access_token:
             return 0.0
@@ -177,18 +177,25 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             data = response.json()
-            values = data.get("values", [])
-            latest_value = next((entry.get("value") for entry in reversed(
-                values) if entry.get("value") is not None), 0.0)
-            return latest_value
+            return data
         except requests.exceptions.RequestException as e:
             cls.log(
                 f"Failed to retrieve production data for system {raw_system_id}: {e}")
             return 0.0
 
     @classmethod
+    def get_production(cls, site_id, reference_time) -> float:
+        json = cls._get_raw_production(site_id, reference_time)
+        values = json.get("values", [])
+        for entry in reversed(values):
+            if "value" in entry and entry["value"] is not None:
+                latest_value = entry["value"]
+                return latest_value 
+        return 0.0
+
+    @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_MONTH())
-    def get_batteries_metadata(cls, raw_system_id) -> list:
+    def _get_site_devices(cls, raw_system_id) -> dict:
         access_token = cls._get_access_token()
         if not access_token:
             return []
@@ -198,30 +205,41 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             cls.log(f"Fetching devices from Enphase API for system {raw_system_id} (metadata).")
             response = requests.get(url, headers=headers)
             response.raise_for_status()
-            devices = response.json().get("devices", [])
-            battery_devices = [device for device in devices if device.get(
-                "encharge", "").lower() == "encharge"]
-            return battery_devices
+            json = response.json()
+            return json
         except requests.exceptions.RequestException as e:
             cls.log(f"Failed to retrieve devices for system {raw_system_id}: {e}")
             return []
 
+    @classmethod
+    def get_batteries_metadata(cls, raw_system_id) -> list:
+        json = cls._get_site_devices(raw_system_id)
+        devices = json.get("devices", [])
+
+        battery_devices = []
+        for device in devices:
+            if "encharge" in device:
+                encharge_value = device["encharge"]  # Get the value associated with "encharge"
+                if isinstance(encharge_value, list) and encharge_value:  # Check if it's a non-empty list
+                    battery_devices.append(device)  # Add the device to the list
+
+        return battery_devices
+
     # Separate call for fetching battery SOE (cached for a shorter period)
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
-    def get_battery_state_of_energy(cls, raw_system_id, serial_number):
+    def _get_battery_state_of_energy(cls, raw_system_id, serial_number):
         access_token = cls._get_access_token()
         if not access_token:
             return None
-        url = f"{ENPHASE_BASE_URL}/api/v4/systems/{raw_system_id}/devices/encharges/{serial_number}/telemetry?key={ENPHASE_API_KEY}"
+        url = f"{ENPHASE_BASE_URL}/api/v4/systems/{raw_system_id}/devices/encharges/{serial_number}/telemetry?key={ENPHASE_KEYS.api_key}"
         headers = {"Authorization": f"Bearer {access_token}"}
         try:
             cls.log(f"Fetching battery telemetry for system {raw_system_id}, battery {serial_number}.")
             response = requests.get(url, headers=headers)
             response.raise_for_status()
-            telemetry_data = response.json()
-            soe = telemetry_data.get("state_of_charge")
-            return soe
+            json = response.json()
+            return json
         except requests.exceptions.RequestException as e:
             cls.log(f"Failed to retrieve telemetry for battery {serial_number} in system {raw_system_id}: {e}")
             return None
@@ -235,7 +253,8 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
         for battery in batteries:
             serial_number = battery.get("serial_number")
             model = battery.get("model", "Unknown")
-            soe = cls.get_battery_state_of_energy(raw_system_id, serial_number)
+            json = cls._get_battery_state_of_energy(raw_system_id, serial_number)
+            soe = json.get("state_of_charge")
             battery_states.append({
                 "serialNumber": serial_number,
                 "model": model,
