@@ -1,4 +1,5 @@
 import pgeocode
+import numpy as np
 from abc import ABC, abstractmethod
 from zoneinfo import ZoneInfo
 import streamlit as st
@@ -65,7 +66,7 @@ def extract_vendor_code(site_id):
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str
-    production_kw_list: List[float]
+    production_kw: List[float]
 
     # Two ProductionRecord objects are considered equal if they share the same vendor and site.
     def __hash__(self):
@@ -76,6 +77,13 @@ class ProductionRecord:
             return NotImplemented
         return (self.site_id) == (other.site_id)
 
+def calculate_production_kw(item):
+    if isinstance(item, list):
+        return sum(item)
+    elif isinstance(item, (int, float)) and not np.isnan(item):
+        return item
+    else:
+        return 0.0
 
 class SolarPlatform(ABC):
     log_container = None # st.empty() A Streamlit container to display log messages
@@ -121,20 +129,14 @@ class SolarPlatform(ABC):
             return site_id_raw
         else:
             return site_id
-
+        
     @classmethod
     def log(cls, message: str):
-        # Print to the command line.
         formatted_str = pprint.pformat(message, depth=None, width=120)
         print(formatted_str)
+        current_logs = cache.get("global_logs", "")
+        cache.set("global_logs", current_logs + formatted_str + "\n")
 
-        if cls.log_container is None:
-            cls.log_container = st.empty()
-
-        # Append the message to the class-level log text.
-        cls.log_text += formatted_str + "\n"
-
-        cls.log_container.text(cls.log_text)
 
 CACHE_EXPIRE_HOUR = 3600
 CACHE_EXPIRE_DAY = CACHE_EXPIRE_HOUR * 24

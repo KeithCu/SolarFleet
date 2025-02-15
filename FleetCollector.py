@@ -39,8 +39,8 @@ def collect_platform(platform):
 
             if site_production_list is not None:
                 new_production = SolarPlatform.ProductionRecord(
-                    site_id=site_id,
-                    production_kw_list=site_production_list,
+                    site_id = site_id,
+                    production_kw = site_production_list,
                 )
                 production_set.add(new_production)
 

@@ -159,11 +159,17 @@ def get_total_noon_kw_all() -> List[Tuple[date, float]]:
     finally:
         session.close()
 
-def get_production_set(production_day: datetime) -> set:
+
+def get_production_set(production_day: datetime = None) -> set:
     session = Sql.SessionLocal()
     try:
-        production_date = production_day.date()
-        record = session.query(Sql.ProductionHistory).filter_by(production_day=production_date).first()
+        query = session.query(Sql.ProductionHistory)
+        if production_day is None:
+            record = query.order_by(Sql.ProductionHistory.production_day.desc()).first()
+        else:
+            production_date = production_day.date()
+            record = query.filter_by(production_day=production_date).first()
+
         if record:
             return record.data
         return set()
@@ -187,8 +193,7 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
         # calculate the total noon production for all sites, to use for historical purposes.
         total_noon_kw = 0
         for site in combined_set:
-            for inverter_prod in site.production_kw_list:
-                total_noon_kw += inverter_prod
+            total_noon_kw += SolarPlatform.calculate_production_kw(site.production_kw)
 
         # Create a fresh instance with the merged data.
         new_record = Sql.ProductionHistory(production_day = production_day, data = combined_set, total_noon_kw = total_noon_kw)
@@ -261,7 +266,7 @@ def process_bulk_solar_production(
     # Compute average production for sanity check.
     production_kw = 0.0
     for site in production_data:
-        for inverter_prod in site.production_kw_list:
+        for inverter_prod in SolarPlatform.calculate_production_kw(site.production_kw):
             production_kw += inverter_prod
 
     avg_prod = production_kw / len(production_data)

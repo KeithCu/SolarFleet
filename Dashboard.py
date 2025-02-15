@@ -66,7 +66,25 @@ def send_browser_notification(title, message):
     """
     st.components.v1.html(f"<script>{js_code}</script>", height=0)
 
+def format_production_tooltip(production_kw):
+    if isinstance(production_kw, list):
+        formatted_list = [f"{item:.2f}" for item in production_kw]
+        return f"[{', '.join(formatted_list)}]"
+    else:
+        return f"{production_kw:.2f}"
 
+
+
+def has_low_production(production):
+    if isinstance(production, list):
+        for production in production:
+            if np.isnan(production) or production < 0.1:
+                return True
+        return False
+    else: # Assume it's a single float
+        production = production
+        return np.isnan(production) or production < 0.1
+    
 def create_map_view(sites_df):
     # Center the map at the average location of all sites (initially)
     avg_lat = sites_df['latitude'].mean()
@@ -94,18 +112,23 @@ def create_map_view(sites_df):
         marker_coords.append([lat, lon])
 
         # Check if any inverter is below the threshold
-        if any(np.isnan(production) or production < 0.1 for production in row["production_kw_list"]):
+        if has_low_production(row["production_kw"]):
             color = "#FF0000"
         else:
             color = "#228B22"
 
+        production_data = row["production_kw"] # Get production_kw for the current row
+
+        # Format production_kw for the tooltip
+        tooltip_content = format_production_tooltip(production_data)
+
         # Display the list of production values in the popup
         popup_html = (
             f"<strong>{row['name']} ({row['site_id']})</strong><br>"
-            f"Production: {row['production_kw_list']}"
+            f"Production: {tooltip_content}"
         )
 
-        total_production = sum(row["production_kw_list"])
+        total_production = SolarPlatform.calculate_production_kw(production_data)
 
         folium.Marker(
             location=[lat, lon],
@@ -183,8 +206,10 @@ def process_alert_section(df, header_title, editor_key, save_button_label, colum
         section_df = df[df['alert_type'] == alert_type].copy()
     else:
         section_df = df.copy()
+      
     if drop_columns:
         section_df.drop(columns=drop_columns, inplace=True)
+
     edited_df = st.data_editor(
         section_df,
         key=editor_key,
@@ -212,14 +237,16 @@ sites_enphase = platform.get_sites_map()
 
 sites.update(sites_enphase)
 
-production_set = db.get_production_set(SolarPlatform.get_recent_noon())
+production_set = db.get_production_set(None)
 df_prod = pd.DataFrame([asdict(record) for record in production_set])
 
+with st.expander("Show Logs", expanded=False):
+    st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
 
 platform.log("Starting application at " + str(datetime.now()))
 
 # Create columns
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 
 # Place buttons in columns
 with col1:
@@ -257,6 +284,9 @@ with col4:
 with col5:
     if st.button("convert api_keys to keyring"):
         SolarPlatform.set_keyring_from_api_keys()
+with col6:
+    if st.button("Clear Logs"):
+        SolarPlatform.cache.delete("global_logs")
 
 
 st.markdown("---")
@@ -264,9 +294,39 @@ st.markdown("---")
 st.header("🚨 Active Alerts")
 
 alerts_df = db.fetch_alerts()
-sites_history_df = db.fetch_sites()[["site_id", "history"]]
+alerts_df = alerts_df.drop(columns=["name", "url"], errors="ignore")
+
+# Generate synthetic alerts for sites with production below 0.1 kW
+existing_alert_sites = set(alerts_df['site_id'].unique())
+synthetic_alerts = []
+for record in production_set:
+    total_kw = SolarPlatform.calculate_production_kw(record.production_kw)
+    if total_kw < 0.1 and record.site_id not in existing_alert_sites:
+        synthetic_alert = SolarPlatform.SolarAlert(
+            site_id=record.site_id,
+            alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
+            severity= 100,
+            details="",
+            first_triggered=datetime.utcnow()
+        )
+        synthetic_alerts.append(synthetic_alert)
+
+if synthetic_alerts:
+    synthetic_df = pd.DataFrame([asdict(alert) for alert in synthetic_alerts])
+    alerts_df = pd.concat([alerts_df, synthetic_df], ignore_index=True)
 
 site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
+
+# Merge alerts_df with site_df to add 'name' and 'url'
+alerts_df = alerts_df.merge(site_df[['site_id', 'name', 'url']], on="site_id", how="left")
+
+alerts_df = alerts_df.drop(columns=["history"], errors="ignore")
+
+#Reorder columns
+alerts_df = alerts_df[['site_id', 'name', 'url'] + [col for col in alerts_df.columns if col not in ['site_id', 'name', 'url']]]
+
+# Fetch the site history
+sites_history_df = db.fetch_sites()[["site_id", "history"]]
 
 if not alerts_df.empty:
     # Merge site history once for all alerts
@@ -281,7 +341,8 @@ if not alerts_df.empty:
         save_button_label="Save Production Site History Updates",
         column_config={
             "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-        }
+        },
+        drop_columns=["alert_type", "details", "resolved_date"],
     )
 
     merged_alerts_df = process_alert_section(
@@ -375,12 +436,15 @@ with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
 
 st.header("🌍 Site Map with Production Data")
 
+
+
+
 if not df_prod.empty and 'latitude' in site_df.columns:
     
     site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
     site_df = site_df.merge(df_prod, on="site_id", how="left")
 
-    site_df['production_kw'] = site_df['production_kw_list'].apply(lambda x: sum(x))
+    site_df['production_kw_total'] = site_df['production_kw'].apply(SolarPlatform.calculate_production_kw)
     site_df['production_kw'] = site_df['production_kw'].round(2)
 
     create_map_view(site_df)
