@@ -12,9 +12,7 @@ import SolarPlatform
 def add_site_if_not_exists(site_id, name, url, nearest_site_id, nearest_distance):
     session = Sql.SessionLocal()
 
-    existing_site = session.query(Sql.Site).filter_by(
-        site_id=site_id
-    ).first()
+    existing_site = session.query(Sql.Site).filter_by(site_id=site_id).first()
 
     if existing_site:
         session.close()
@@ -146,7 +144,7 @@ def fetch_all_batteries():
         Sql.Battery.state_of_energy.asc())
     all_batteries = pd.read_sql(query.statement, session.bind)
     session.close()
-
+    return all_batteries
 
 def get_total_noon_kw_all() -> List[Tuple[date, float]]:
     session = Sql.SessionLocal()
@@ -161,17 +159,11 @@ def get_total_noon_kw_all() -> List[Tuple[date, float]]:
     finally:
         session.close()
 
-    return all_batteries
-
-
-def get_production_set(production_day: date) -> set:
+def get_production_set(production_day: datetime) -> set:
     session = Sql.SessionLocal()
     try:
-        # This doesn't respect the production_day for some reason, but does return data so is okay for now.
-        # Perhaps the day stored in the database is not exactly this time, but close?
-        # Anyway once I get the stuff displaying something, anything, reasonable, I can fix.
-        # record = session.query(Sql.ProductionHistory).filter_by(production_day=production_day).first()
-        record = session.query(Sql.ProductionHistory).first()
+        production_date = production_day.date()
+        record = session.query(Sql.ProductionHistory).filter_by(production_day=production_date).first()
         if record:
             return record.data
         return set()

@@ -15,6 +15,7 @@ import SolarPlatform
 import Database as db
 
 from SolarEdge import SolarEdgePlatform
+from Enphase import EnphasePlatform
 
 def collect_platform(platform):
     sites = None
@@ -26,9 +27,6 @@ def collect_platform(platform):
     try:
         for site_id in sites.keys():
             site = sites[site_id]
-            latitude, longitude = SolarPlatform.get_coordinates(
-                sites[site_id].zipcode)
-
             # This needs to be moved to later when we have the nearest site information
             db.add_site_if_not_exists(site_id, sites[site_id].name, site.url, "nearest_siteid", "nearest_distance")
 
@@ -66,5 +64,8 @@ def collect_platform(platform):
 
 
 def run_collection():
-    platform = SolarEdgePlatform()
-    collect_platform(platform)
+    platformSolarEdge = SolarEdgePlatform()
+    collect_platform(platformSolarEdge)
+    
+    platformEnphase = EnphasePlatform()
+    collect_platform(platformEnphase)

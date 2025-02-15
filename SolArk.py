@@ -1,4 +1,3 @@
-from api_keys import SOLARK_EMAIL, SOLARK_PASSWORD
 import requests
 import time
 from datetime import datetime
@@ -19,7 +18,7 @@ SOLARK_LOGIN_URL = SOLARK_BASE_URL + "/login"
 SOLARK_SITES_URL = SOLARK_BASE_URL + "/plants"
 SOLARK_OVERVIEW_URL = SOLARK_SITES_URL + "/overview"
 
-
+from api_keys import SOLARK_EMAIL, SOLARK_PASSWORD
 g_driver = None
 
 

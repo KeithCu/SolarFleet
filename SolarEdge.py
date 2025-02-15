@@ -1,17 +1,23 @@
+from dataclasses import dataclass
 from typing import List, Dict
 from datetime import datetime, timedelta
 import requests
 import random
 import streamlit as st
-
 import keyring
+
+import api_keys
 import SolarPlatform
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
 SOLAREDGE_SITE_URL = 'https://monitoring.solaredge.com/solaredge-web/p/site/'
 
+@dataclass(frozen=True)
+class SolarEdgeKeys:
+    account_key : str
+    api_key : str
+
 def fetch_solaredge_keys():
-    """Fetches SolarEdge API keys from the keyring."""
     try:
         account_key = keyring.get_password("solaredge", "account_key")
         api_key = keyring.get_password("solaredge", "api_key")
@@ -19,20 +25,20 @@ def fetch_solaredge_keys():
         if any(key is None for key in [account_key, api_key]):
             raise ValueError("Missing SolarEdge key(s) in keyring.")
 
-        return {
-            "account_key": account_key,
-            "api_key": api_key,
-        }
+        return SolarEdgeKeys(account_key, api_key)
+    
     except Exception as e:
         print(f"Error fetching SolarEdge keys: {e}")
         return None
     
-solaredge_keys = fetch_solaredge_keys()
+#SOLAREDGE_KEYS = fetch_solaredge_keys()
+
+SOLAREDGE_KEYS = SolarEdgeKeys(api_keys.SOLAREDGE_V2_ACCOUNT_KEY, api_keys.SOLAREDGE_V2_API_KEY)
 
 SOLAREDGE_HEADERS = {
-        "X-API-Key": solaredge_keys["api_key"],
+        "X-API-Key": SOLAREDGE_KEYS.api_key, 
         "Accept": "application/json",
-        "X-Account-Key": solaredge_keys["account_key"],
+        "X-Account-Key": SOLAREDGE_KEYS.account_key,
     }
 
 class SolarEdgePlatform(SolarPlatform.SolarPlatform):
@@ -49,8 +55,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
         while True:
             cls.log("Fetching all sites from SolarEdge API...")
-            response = requests.get(
-                url, headers=SOLAREDGE_HEADERS, params=params)
+            response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
             response.raise_for_status()
             sites = response.json()
 
@@ -78,8 +83,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                 name = str(random.randint(1000, 9999)) + " Main St"
 
             latitude, longitude = SolarPlatform.get_coordinates(zipcode)
-            site_info = SolarPlatform.SiteInfo(
-                site_id, name, site_url, zipcode, latitude, longitude)
+            site_info = SolarPlatform.SiteInfo(site_id, name, site_url, zipcode, latitude, longitude)
             sites_dict[site_id] = site_info
 
         return sites_dict
@@ -137,10 +141,12 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
     def get_production(cls, site_id, reference_time):
         raw_site_id = cls.strip_vendorcodeprefix(site_id)
-
+        formatted_begin_time = reference_time.isoformat(timespec='seconds').replace('+00:00', 'Z')
         end_time = reference_time + timedelta(minutes=15)
+        formatted_end_time = end_time.isoformat(timespec='seconds').replace('+00:00', 'Z')
+
         url = SOLAREDGE_BASE_URL + f'/sites/{raw_site_id}/power'
-        params = {'from': reference_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
+        params = {'from': formatted_begin_time , 'to': formatted_end_time,
                   'resolution': 'QUARTER_HOUR', 'unit': 'KW'}
 
         cls.log(f"Fetching production data from SolarEdge API for site {raw_site_id} at {reference_time}.")

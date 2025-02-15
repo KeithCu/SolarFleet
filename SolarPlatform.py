@@ -12,7 +12,6 @@ import random
 import math
 from datetime import datetime, timedelta, time
 import keyring
-
 import api_keys
 
 # Disk cache decorator to save remote API calls.
@@ -24,7 +23,6 @@ class BatteryInfo:
     serial_number: str
     model_name: str
     state_of_energy: str
-
 
 class AlertType:
     NO_COMMUNICATION = "NO_COMMUNICATION"
@@ -60,8 +58,7 @@ def extract_vendor_code(site_id):
     if ':' in site_id:
         return site_id.split(':', 1)[0]
     else:
-        raise ValueError(
-            f"Invalid site_id format: {site_id}. Expected a vendor code prefix followed by a colon.")
+        raise ValueError(f"Invalid site_id: {site_id}. Expected a vendor code prefix + :")
 
 # In Sqlite, for each day, we store a set of ProductionRecord objects, one for each site.
 @dataclass(frozen=True)
@@ -156,35 +153,32 @@ def disk_cache(expiration_seconds):
     def decorator(func):
         def wrapper(*args, **kwargs):
             cache_key = f"{func.__name__}_{args}_{kwargs}"
-            try:
-                return cache[cache_key]
-            except KeyError:
-                result = func(*args, **kwargs)
-                cache.set(cache_key, result, expire=expiration_seconds)
-                return result
+            if cache_key in cache:
+                try:
+                    return cache[cache_key]
+                except KeyError:
+                    pass
+            result = func(*args, **kwargs)
+            cache.set(cache_key, result, expire=expiration_seconds)
+            return result
         return wrapper
     return decorator
 
 
 # FIXME, harding codes Eastern timezone for now
-def get_recent_noon() -> datetime:
-
-    eastern = ZoneInfo("America/New_York")
-    now = datetime.now(eastern)
+def get_recent_noon(timezone_str="America/New_York") -> datetime:
+    tz = ZoneInfo(timezone_str)  # Use specified timezone
+    now = datetime.now(tz)
     today = now.date()
 
-    # Define the threshold: today at 12:30 in Eastern Time.
-    threshold = datetime.combine(today, time(12, 30), tzinfo=eastern)
+    threshold = datetime.combine(today, time(12, 30), tzinfo=tz)  # Threshold in specified tz
 
-    if now >= threshold:
-        measurement_date = today
-    else:
-        measurement_date = today - timedelta(days=1)
+    measurement_date = today if now >= threshold else today - timedelta(days=1)
 
-    # Create a datetime for noon (5:00) on the chosen date in UTC.
-    measurement_dt = datetime.combine(measurement_date, time(17, 0, 0, 0))
-    return measurement_dt
+    noon_local = datetime.combine(measurement_date, time(12, 0), tzinfo=tz) # Noon in specified tz
+    noon_utc = noon_local.astimezone(ZoneInfo("UTC")) # Convert to UTC
 
+    return noon_utc
 
 nomi = pgeocode.Nominatim('us')
 
@@ -197,7 +191,6 @@ def haversine_distance(lat1, lon1, lat2, lon2):
         math.cos(lat2) * math.sin(dlon/2)**2
     c = 2 * math.asin(math.sqrt(a))
     return c * 3958.8  # Earth radius in miles
-
 
 @st.cache_data
 def get_coordinates(zip_code):
