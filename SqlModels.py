@@ -11,10 +11,6 @@ SessionLocal = sessionmaker(bind=engine)
 #
 # # Define tables
 
-# Given that you're not storing latitude and longitude in the database, here's how you can add the other indexes using SQLAlchemy:
-
-# python
-
 # from sqlalchemy import Index
 
 # # For Alerts Table
@@ -23,11 +19,6 @@ SessionLocal = sessionmaker(bind=engine)
 
 # # For ProductionHistory Table
 # Index('idx_productionhistory_day', ProductionHistory.production_day)
-
-
-# Add these Index objects to your table definitions:
-
-# python
 
 # class Alert(Base):
 #     __tablename__ = "alerts"
@@ -44,75 +35,6 @@ SessionLocal = sessionmaker(bind=engine)
 #         Index('idx_productionhistory_day', 'production_day'),
 #     )
 
-
-# Bug in get_production_set
-# Regarding the issue with get_production_set, here are potential causes and solutions:
-
-#     Date vs. Datetime Mismatch:
-#         SQLite might store dates as TEXT or DATETIME, which can lead to type mismatches if not handled correctly.
-
-#     Check how production_day is stored in SQLite:
-
-#         If it's stored as a string in a specific format, ensure your date object is converted to match this format before querying:
-
-#         python
-
-# from datetime import date, datetime
-
-# def get_production_set(production_day: date) -> set:
-#     session = Sql.SessionLocal()
-#     try:
-#         # Assuming SQLite stores dates as 'YYYY-MM-DD'
-#         date_str = production_day.strftime('%Y-%m-%d')
-#         record = session.query(Sql.ProductionHistory).filter_by(production_day=date_str).first()
-#         if record:
-#             return record.data
-#         return set()
-#     finally:
-#         session.close()
-
-# If production_day is stored as a DATETIME in SQLite, you might need to compare against a range:
-
-# python
-
-#     def get_production_set(production_day: date) -> set:
-#         session = Sql.SessionLocal()
-#         try:
-#             start_of_day = datetime.combine(production_day, time.min)
-#             end_of_day = datetime.combine(production_day, time.max)
-#             record = session.query(Sql.ProductionHistory).filter(
-#                 Sql.ProductionHistory.production_day.between(start_of_day, end_of_day)
-#             ).first()
-#             if record:
-#                 return record.data
-#             return set()
-#         finally:
-#             session.close()
-
-# SQLAlchemy Version or SQLite Issue: Sometimes, the way SQLAlchemy interprets date comparisons can lead to unexpected behavior, especially with different SQLite versions. You might want to:
-
-#     Check your SQLAlchemy and SQLite versions for known bugs or compatibility issues.
-#     Print or log the SQL statement SQLAlchemy generates for debugging:
-
-#     python
-
-#     from sqlalchemy import inspect
-
-#     inspector = inspect(session.bind)
-#     print(inspector.get_columns('productionhistory'))
-#     # Print the generated SQL for debugging
-#     print(session.query(Sql.ProductionHistory).filter_by(production_day=production_day).statement)
-
-# Data Inspection: Make sure the data in your database matches what you're querying for:
-
-#     Query directly with SQL or through SQLAlchemy to see if there's data for that day:
-
-#     python
-
-# with Sql.SessionLocal() as session:
-#     result = session.execute(select(Sql.ProductionHistory.production_day))
-#     for row in result:
-#         print(row.production_day)  # See if it matches your query date
 
 class Site(Base):
     __tablename__ = "sites"
