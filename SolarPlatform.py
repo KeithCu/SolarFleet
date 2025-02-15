@@ -24,11 +24,13 @@ class BatteryInfo:
     model_name: str
     state_of_energy: str
 
+
+@dataclass(frozen=True)
 class AlertType:
     NO_COMMUNICATION = "NO_COMMUNICATION"
+    PRODUCTION_ERROR = "PRODUCTION_ERROR"
+    PANEL_ERROR = "PANEL_ERROR" # Microinverter or optimizer error
     CONFIG_ERROR = "CONFIG_ERROR"
-    HARDWARE_ERROR = "HARDWARE_ERROR"
-    MLPE_ERROR = "MLPE_ERROR"
 
 
 @dataclass(frozen=True)
@@ -52,7 +54,6 @@ class SiteInfo:
     zipcode: str
     latitude: float
     longitude: float
-
 
 def extract_vendor_code(site_id):
     if ':' in site_id:
@@ -228,7 +229,6 @@ def set_keyring_from_api_keys():
         print(f"Error: Missing API key in api_keys.py: {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-
 
 
 # If you want to display fake data for screenshots

@@ -101,7 +101,7 @@ def create_map_view(sites_df):
         if np.isnan(row['production_kw']) or row['production_kw'] < 0.1:
             color = "#FF0000"
         else:
-            color = "#2A81CB"
+            color = "#228B22"
 
         popup_html = (
             f"<strong>{row['name']} ({row['site_id']})</strong><br>"
@@ -205,6 +205,15 @@ st.set_page_config(page_title=title, layout="wide")
 Sql.init_fleet_db()
 st.title(title)
 
+platform = SolarEdgePlatform()
+sites = platform.get_sites_map()
+
+platform = EnphasePlatform()
+sites_enphase = platform.get_sites_map()
+
+sites.update(sites_enphase)
+
+platform.log("Starting application at " + str(datetime.now()))
 
 # Create columns
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -254,16 +263,6 @@ st.header("🚨 Active Alerts")
 alerts_df = db.fetch_alerts()
 sites_history_df = db.fetch_sites()[["site_id", "history"]]
 
-#platform = SolarEdgePlatform()
-#sites = platform.get_sites_map()
-
-platform = EnphasePlatform()
-sites = platform.get_sites_map()
-
-#sites.update(sites_enphase)
-
-platform.log("Starting application at " + str(datetime.now()))
-
 site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
 
 if not alerts_df.empty:
@@ -276,7 +275,7 @@ if not alerts_df.empty:
     merged_alerts_df = process_alert_section(
         merged_alerts_df,
         header_title="Site Production failure",
-        alert_type="INVERTER_BELOW_THRESHOLD_LIMIT",
+        alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
         editor_key="production_production",
         save_button_label="Save Production Site History Updates",
         column_config={
@@ -287,7 +286,7 @@ if not alerts_df.empty:
     merged_alerts_df = process_alert_section(
         merged_alerts_df,
         header_title="Site Communication failure",
-        alert_type="SITE_COMMUNICATION_FAULT",
+        alert_type=SolarPlatform.AlertType.NO_COMMUNICATION,
         editor_key="comms_editor",
         save_button_label="Save Communication Site History Updates",
         column_config={
@@ -301,7 +300,7 @@ if not alerts_df.empty:
     merged_alerts_df = process_alert_section(
         merged_alerts_df,
         header_title="Panel-level failures",
-        alert_type="PANEL_COMMUNICATION_FAULT",
+        alert_type= SolarPlatform.AlertType.PANEL_ERROR,
         editor_key="panel_editor",
         save_button_label="Save Panel Site History Updates",
         column_config={

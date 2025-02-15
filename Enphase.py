@@ -46,16 +46,6 @@ ENPHASE_KEYS = EnphaseKeys(client_id=api_keys.ENPHASE_CLIENT_ID, client_secret=a
                             user_password=api_keys.ENPHASE_USER_PASSWORD)
 
 #ENPHASE_KEYS = fetch_enphase_keys()
-    
-# Shared standard error codes across vendors.
-
-class StandardErrorCodes(Enum):
-    NO_COMMUNICATION = "NO_COMMUNICATION"
-    CONFIG_ERROR = "CONFIG_ERROR"
-    HARDWARE_ERROR = "HARDWARE_ERROR"
-    API_ERROR = "API_ERROR"
-    UNKNOWN_ERROR = "UNKNOWN_ERROR"
-
 
 class EnphasePlatform(SolarPlatform.SolarPlatform):
 
@@ -114,9 +104,9 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             cls.log("Authentication failed in get_access_token")
             return None
 
-    #We use this API to check for alerts, so cache for a short period of time.
+    #We use this to check for alerts, so cache for a short period of time.
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_DAY)
     def get_sites_list(cls) -> list:
         access_token = cls.get_access_token()
         if not access_token:
@@ -160,7 +150,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
         return sites_dict
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_DAY)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
     def get_production_micros(cls, site_id, reference_time) -> float:
         epoch_time = int(reference_time.timestamp())
         access_token = cls.get_access_token()
@@ -224,7 +214,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
         return battery_devices
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_DAY)
     def get_battery_state_of_energy(cls, raw_system_id, serial_number):
         access_token = cls.get_access_token()
         if not access_token:
@@ -270,7 +260,18 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             })
         return battery_states
 
-    #get_sites_list() caches so we don't need one.
+    @classmethod
+    def convert_alert_to_standard(cls, alert):
+        if alert == "comm":
+            return SolarPlatform.AlertType.NO_COMMUNICATION
+        if alert == "power":
+            return SolarPlatform.AlertType.PRODUCTION_ERROR
+        if alert == "micro":
+            return SolarPlatform.AlertType.PANEL_ERROR
+        else:
+            return SolarPlatform.AlertType.CONFIG_ERROR
+
+    # get_sites_list() caches so use and adjust that one instead.
     @classmethod
     def get_alerts(cls) -> list:
         sites = cls.get_sites_list()
@@ -280,12 +281,12 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             if status != "normal":
                 raw_system_id = site.get("system_id")
                 site_id = cls.add_vendorcodeprefix(raw_system_id)
-                alert_type = StandardErrorCodes.API_ERROR.value
-                details = f"System status is {status}."
-                severity = 50  # Adjust severity based on your criteria
+                alert_type = cls.convert_alert_to_standard(status)
+                details = ""
+                severity = 50  # FIXME Adjust severity
+                 # FIXME Look for this data, at least for comms errors.
                 first_triggered = datetime.utcnow()
-                alert = SolarPlatform.SolarAlert(
-                    site_id, alert_type, severity, details, first_triggered)
+                alert = SolarPlatform.SolarAlert(site_id, alert_type, severity, details, first_triggered)
                 alerts.append(alert)
         return alerts
    

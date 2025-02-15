@@ -71,7 +71,7 @@ def add_alert_if_not_exists(site_id, name, url, alert_type, details, severity, f
                 site_id=site_id,
                 name=name,
                 url=url,
-                alert_type=alert_type,
+                alert_type=str(alert_type),
                 details=details,
                 severity=severity,
                 first_triggered=first_triggered,
@@ -178,7 +178,7 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
         existing = session.get(Sql.ProductionHistory, production_day)
 
         if existing:
-            combined_set = (existing.data)
+            combined_set = existing.data.copy()
             combined_set.update(new_data)
         else:
             # If no record exists, use a copy of new_data.
@@ -190,8 +190,7 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
             total_noon_kw += e.production_kw
 
         # Create a fresh instance with the merged data.
-        new_record = Sql.ProductionHistory(
-            production_day=production_day, data=combined_set, total_noon_kw=total_noon_kw)
+        new_record = Sql.ProductionHistory(production_day = production_day, data = combined_set, total_noon_kw = total_noon_kw)
 
         # session.merge() will check if a record with the given primary key exists;
         # if so, it will update that record with new_record’s state, otherwise it will add a new record.
@@ -259,8 +258,7 @@ def process_bulk_solar_production(
         return
 
     # Compute average production for sanity check.
-    avg_prod = sum(prod.production_kw for prod in production_data) / \
-        len(production_data)
+    avg_prod = sum(prod.production_kw for prod in production_data) / len(production_data)
     # if avg_prod < sunny_threshold and not recalibrate:
     #     raise ValueError(
     #         f"Average production ({avg_prod:.2f}) is below the sunny threshold ({sunny_threshold}). "

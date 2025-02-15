@@ -5,7 +5,7 @@ import requests
 import random
 import streamlit as st
 import keyring
-
+import time
 import api_keys
 import SolarPlatform
 
@@ -32,6 +32,8 @@ def fetch_solaredge_keys():
         return None
     
 #SOLAREDGE_KEYS = fetch_solaredge_keys()
+
+SOLAREDGE_SLEEP = 0.2
 
 SOLAREDGE_KEYS = SolarEdgeKeys(api_keys.SOLAREDGE_V2_ACCOUNT_KEY, api_keys.SOLAREDGE_V2_API_KEY)
 
@@ -95,6 +97,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         params = {"types": ["BATTERY"]}
 
         cls.log(f"Fetching site / battery inventory data from SolarEdge API for site {raw_site_id}.")
+        time.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
@@ -111,7 +114,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/storage/{serial_number}/state-of-energy'
         params = {'from': start_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
                   'resolution': 'QUARTER_HOUR', 'unit': 'PERCENTAGE'}
-
+        
+        time.sleep(SOLAREDGE_SLEEP)
         cls.log(f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
@@ -150,7 +154,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                   'resolution': 'QUARTER_HOUR', 'unit': 'KW'}
 
         cls.log(f"Fetching production data from SolarEdge API for site {raw_site_id} at {reference_time}.")
-
+        time.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         power = response.json().get('values', [])
@@ -159,10 +163,20 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return latest_value
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
+    def convert_alert_to_standard(cls, alert):
+        if alert == "SITE_COMMUNICATION_FAULT":
+            return SolarPlatform.AlertType.NO_COMMUNICATION
+        if alert == "INVERTER_BELOW_THRESHOLD_LIMIT":
+            return SolarPlatform.AlertType.PRODUCTION_ERROR
+        if alert == "PANEL_COMMUNICATION_FAULT":
+            return SolarPlatform.AlertType.PANEL_ERROR
+        else:
+            return SolarPlatform.AlertType.CONFIG_ERROR
+
+    @classmethod
+    #@SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
     def get_alerts(cls) -> List[SolarPlatform.SolarAlert]:
         url = f'{SOLAREDGE_BASE_URL}/alerts'
-        sites_dict = cls.get_sites_map()
         all_alerts = []
 
         try:
@@ -179,8 +193,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                         first_triggered_str.replace("Z", "+00:00"))
                 else:
                     first_triggered = first_triggered_str
-                solarAlert = SolarPlatform.SolarAlert(site_id, alert.get(
-                    'type'), alert.get('impact'), alert_details, first_triggered)
+                alert_type = cls.convert_alert_to_standard(alert.get('type'))
+                solarAlert = SolarPlatform.SolarAlert(site_id, alert_type, alert.get('impact'), alert_details, first_triggered)
                 all_alerts.append(solarAlert)
 
             return all_alerts
