@@ -68,11 +68,6 @@ def send_browser_notification(title, message):
 
 
 def create_map_view(sites_df):
-    """
-    Create a folium map that shows each site's current noon production.
-    The icon background color is red if there is no production (power == 0),
-    otherwise it remains blue.
-    """
     # Center the map at the average location of all sites (initially)
     avg_lat = sites_df['latitude'].mean()
     avg_lon = sites_df['longitude'].mean()
@@ -98,15 +93,19 @@ def create_map_view(sites_df):
 
         marker_coords.append([lat, lon])
 
-        if np.isnan(row['production_kw']) or row['production_kw'] < 0.1:
+        # Check if any inverter is below the threshold
+        if any(np.isnan(production) or production < 0.1 for production in row["production_kw_list"]):
             color = "#FF0000"
         else:
             color = "#228B22"
 
+        # Display the list of production values in the popup
         popup_html = (
             f"<strong>{row['name']} ({row['site_id']})</strong><br>"
-            f"Production: {row['production_kw']} W"
+            f"Production: {row['production_kw_list']}"
         )
+
+        total_production = sum(row["production_kw_list"])
 
         folium.Marker(
             location=[lat, lon],
@@ -124,7 +123,7 @@ def create_map_view(sites_df):
                         color: white;
                         border: 2px solid #fff;
                         font-weight: bold;">
-                        {row['production_kw']}
+                        {total_production:.2f}
                     </div>
                 """
             )
@@ -213,6 +212,10 @@ sites_enphase = platform.get_sites_map()
 
 sites.update(sites_enphase)
 
+production_set = db.get_production_set(SolarPlatform.get_recent_noon())
+df_prod = pd.DataFrame([asdict(record) for record in production_set])
+
+
 platform.log("Starting application at " + str(datetime.now()))
 
 # Create columns
@@ -266,8 +269,6 @@ sites_history_df = db.fetch_sites()[["site_id", "history"]]
 site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
 
 if not alerts_df.empty:
-    # Filter out unwanted alert types
-    alerts_df = alerts_df[alerts_df['alert_type'] != 'SNOW_ON_SITE']
     # Merge site history once for all alerts
     merged_alerts_df = alerts_df.merge(
         sites_history_df, on="site_id", how="left")
@@ -374,13 +375,14 @@ with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
 
 st.header("🌍 Site Map with Production Data")
 
-production_set = db.get_production_set(SolarPlatform.get_recent_noon())
-df = pd.DataFrame([asdict(record) for record in production_set])
-
-if not df.empty and 'latitude' in site_df.columns:
+if not df_prod.empty and 'latitude' in site_df.columns:
+    
     site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
-    site_df = site_df.merge(df, on="site_id", how="left")
+    site_df = site_df.merge(df_prod, on="site_id", how="left")
+
+    site_df['production_kw'] = site_df['production_kw_list'].apply(lambda x: sum(x))
     site_df['production_kw'] = site_df['production_kw'].round(2)
+
     create_map_view(site_df)
 
     site_df.sort_values("production_kw", ascending=False, inplace=True)

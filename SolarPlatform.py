@@ -61,11 +61,11 @@ def extract_vendor_code(site_id):
     else:
         raise ValueError(f"Invalid site_id: {site_id}. Expected a vendor code prefix + :")
 
-# In Sqlite, for each day, we store a set of ProductionRecord objects, one for each site.
+# For each day, we store a set of ProductionRecord objects, one for each site.
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str
-    production_kw: float
+    production_kw_list: List[float]
 
     # Two ProductionRecord objects are considered equal if they share the same vendor and site.
     def __hash__(self):
@@ -94,8 +94,8 @@ class SolarPlatform(ABC):
 
     @classmethod
     @abstractmethod
-    # returns production in KW at a particular time
-    def get_production(cls, site_id, reference_time) -> float:
+    # returns a list of production for each inverter on site
+    def get_production(cls, site_id, reference_time) -> List[float]:
         pass
 
     @classmethod

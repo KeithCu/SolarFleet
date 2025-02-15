@@ -186,8 +186,9 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
 
         # calculate the total noon production for all sites, to use for historical purposes.
         total_noon_kw = 0
-        for e in combined_set:
-            total_noon_kw += e.production_kw
+        for site in combined_set:
+            for inverter_prod in site.production_kw_list:
+                total_noon_kw += inverter_prod
 
         # Create a fresh instance with the merged data.
         new_record = Sql.ProductionHistory(production_day = production_day, data = combined_set, total_noon_kw = total_noon_kw)
@@ -258,7 +259,12 @@ def process_bulk_solar_production(
         return
 
     # Compute average production for sanity check.
-    avg_prod = sum(prod.production_kw for prod in production_data) / len(production_data)
+    production_kw = 0.0
+    for site in production_data:
+        for inverter_prod in site.production_kw_list:
+            production_kw += inverter_prod
+
+    avg_prod = production_kw / len(production_data)
     # if avg_prod < sunny_threshold and not recalibrate:
     #     raise ValueError(
     #         f"Average production ({avg_prod:.2f}) is below the sunny threshold ({sunny_threshold}). "

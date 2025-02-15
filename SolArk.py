@@ -1,3 +1,4 @@
+from typing import List
 import requests
 import time
 from datetime import datetime
@@ -138,9 +139,10 @@ class SolArkPlatform(SolarPlatform):
                     sites[full_site_id] = site_name
         return sites
 
+    #TODO: For now, it's just one Inverter per site, and only fetches current values
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
-    def get_production(cls, site_id, reference_time) -> float:
+    def get_production(cls, site_id, reference_time) -> List[float]:
         global g_driver
         if g_driver is None:
             g_driver = create_driver()
@@ -157,10 +159,10 @@ class SolArkPlatform(SolarPlatform):
         if production_element:
             prod_text = production_element.text.strip().replace('kW', '').strip()
             try:
-                return float(prod_text)
+                return [float(prod_text)]
             except ValueError:
-                return 0.0
-        return 0.0
+                return [0.0]
+        return[0.0]
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)

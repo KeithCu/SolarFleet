@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Dict
 from datetime import datetime, timedelta
+import numpy as np
 import requests
 import random
 import streamlit as st
@@ -70,7 +71,6 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return all_sites
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
     def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         sites = cls.get_sites_list()
 
@@ -92,18 +92,33 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_MONTH())
-    def get_batteries(cls, raw_site_id):
+    def get_devices(cls, raw_site_id):
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/devices'
-        params = {"types": ["BATTERY"]}
+        params = {"types": ["BATTERY", "INVERTER"]}
 
-        cls.log(f"Fetching site / battery inventory data from SolarEdge API for site {raw_site_id}.")
+        cls.log(f"Fetching Inverter / battery inventory data from SolarEdge API for site {raw_site_id}.")
         time.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
+        return devices 
+    
+
+    @classmethod
+    def get_inverters(cls, raw_site_id):
+        devices = cls.get_devices(raw_site_id)
+
+        inverters = [device for device in devices if device.get('type') == 'INVERTER']
+        return inverters
+
+
+    @classmethod
+    def get_batteries(cls, raw_site_id):
+        devices = cls.get_devices(raw_site_id)
 
         batteries = [device for device in devices if device.get('type') == 'BATTERY']
         return batteries
+
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
@@ -143,25 +158,47 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
-    def get_production(cls, site_id, reference_time):
-        raw_site_id = cls.strip_vendorcodeprefix(site_id)
+    def _get_inverter_production(cls, raw_site_id, reference_time, inverter_id):
         formatted_begin_time = reference_time.isoformat(timespec='seconds').replace('+00:00', 'Z')
         end_time = reference_time + timedelta(minutes=15)
         formatted_end_time = end_time.isoformat(timespec='seconds').replace('+00:00', 'Z')
 
-        url = SOLAREDGE_BASE_URL + f'/sites/{raw_site_id}/power'
+        url = SOLAREDGE_BASE_URL + f'/sites/{raw_site_id}/inverters/{inverter_id}/power'
         params = {'from': formatted_begin_time , 'to': formatted_end_time,
                   'resolution': 'QUARTER_HOUR', 'unit': 'KW'}
 
-        cls.log(f"Fetching production data from SolarEdge API for site {raw_site_id} at {reference_time}.")
+        cls.log(f"Fetching production from SolarEdge API for site: {raw_site_id} inverter: {inverter_id} at {reference_time}.")
         time.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
-        power = response.json().get('values', [])
+        json = response.json().get('values', [])
+        return json
 
-        latest_value = power[0].get('value', 0)
-        return latest_value
 
+    @classmethod
+    def get_inverter_production(cls, raw_site_id, reference_time, inverter_id):
+        powers = cls._get_inverter_production(raw_site_id, reference_time, inverter_id)
+        power = powers[0].get('value', 0.0)
+        if power is None:
+            power = 0.0
+
+        power = round(power, 2)
+        return power
+
+
+    @classmethod
+    def get_production(cls, site_id, reference_time) -> List[float]:
+        raw_site_id = cls.strip_vendorcodeprefix(site_id)
+        inverters = cls.get_inverters(raw_site_id)
+
+        productions = []
+        for inverter in inverters:
+            serial_number = inverter.get('serialNumber')
+            power = cls.get_inverter_production(raw_site_id, reference_time, serial_number)
+            productions.append(power)
+
+        return productions
+    
     @classmethod
     def convert_alert_to_standard(cls, alert):
         if alert == "SITE_COMMUNICATION_FAULT":
@@ -174,7 +211,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             return SolarPlatform.AlertType.CONFIG_ERROR
 
     @classmethod
-    #@SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
     def get_alerts(cls) -> List[SolarPlatform.SolarAlert]:
         url = f'{SOLAREDGE_BASE_URL}/alerts'
         all_alerts = []
@@ -193,6 +230,11 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                         first_triggered_str.replace("Z", "+00:00"))
                 else:
                     first_triggered = first_triggered_str
+
+                # Filter out unwanted alert types
+                if alert.get('type') == 'SNOW_ON_SITE':
+                    continue
+
                 alert_type = cls.convert_alert_to_standard(alert.get('type'))
                 solarAlert = SolarPlatform.SolarAlert(site_id, alert_type, alert.get('impact'), alert_details, first_triggered)
                 all_alerts.append(solarAlert)

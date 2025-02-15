@@ -35,12 +35,12 @@ def collect_platform(platform):
                 db.update_battery_data(site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'])
 
             # Fetch production data and put into set
-            site_production = platform.get_production(site_id, reference_date)
+            site_production_list = platform.get_production(site_id, reference_date)
 
-            if site_production is not None:
+            if site_production_list is not None:
                 new_production = SolarPlatform.ProductionRecord(
                     site_id=site_id,
-                    production_kw=site_production,
+                    production_kw_list=site_production_list,
                 )
                 production_set.add(new_production)
 

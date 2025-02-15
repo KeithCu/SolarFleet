@@ -8,9 +8,7 @@ import hashlib
 from datetime import datetime
 from typing import Dict, List
 
-# Import your SolarPlatform base class and utilities
 import SolarPlatform
-from SolarPlatform import disk_cache, CACHE_EXPIRE_HOUR, CACHE_EXPIRE_WEEK, SiteInfo, SolarAlert, ProductionRecord
 
 # API endpoints
 RESOURCE_PREFIX = '/v1/api/'
@@ -40,10 +38,10 @@ class SolisCloudPlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     def get_vendorcode(cls):
-        return "SC"  # Vendor code for SolisCloud
+        return "SO"
 
     @classmethod
-    async def _async_fetch_api_data(cls, endpoint: str, params: dict, ttl: int = CACHE_EXPIRE_HOUR) -> dict:
+    async def _async_fetch_api_data(cls, endpoint: str, params: dict, ttl: int = SolarPlatform.CACHE_EXPIRE_HOUR) -> dict:
         """
         Asynchronously fetch raw data from the SolisCloud API using a shared session.
         Raw responses are returned for further processing.
@@ -71,7 +69,7 @@ class SolisCloudPlatform(SolarPlatform.SolarPlatform):
             raise SolisCloudAPIError("Timeout error occurred during API call")
 
     @classmethod
-    def _fetch_api_data(cls, endpoint: str, params: dict, ttl: int = CACHE_EXPIRE_HOUR) -> dict:
+    def _fetch_api_data(cls, endpoint: str, params: dict, ttl: int = SolarPlatform.CACHE_EXPIRE_HOUR) -> dict:
         """
         Synchronous wrapper around the async API call.
         This function is decorated with SolarPlatform.disk_cache so that raw API responses are cached.
@@ -79,7 +77,7 @@ class SolisCloudPlatform(SolarPlatform.SolarPlatform):
         return asyncio.run(cls._async_fetch_api_data(endpoint, params, ttl))
 
     @classmethod
-    @disk_cache(CACHE_EXPIRE_HOUR)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
     def get_user_station_list(cls, page_no: int = 1, page_size: int = 20, nmi_code: str = None) -> dict:
         params = {"pageNo": page_no, "pageSize": page_size}
         if nmi_code:
