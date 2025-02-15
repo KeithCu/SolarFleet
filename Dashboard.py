@@ -300,12 +300,11 @@ alerts_df = alerts_df.drop(columns=["name", "url"], errors="ignore")
 existing_alert_sites = set(alerts_df['site_id'].unique())
 synthetic_alerts = []
 for record in production_set:
-    total_kw = SolarPlatform.calculate_production_kw(record.production_kw)
-    if total_kw < 0.1 and record.site_id not in existing_alert_sites:
+    if has_low_production(record.production_kw) and record.site_id not in existing_alert_sites:
         synthetic_alert = SolarPlatform.SolarAlert(
             site_id=record.site_id,
             alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
-            severity= 100,
+            severity=100,
             details="",
             first_triggered=datetime.utcnow()
         )
