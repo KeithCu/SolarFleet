@@ -175,6 +175,35 @@ def display_historical_chart(historical_df):
 
     st.altair_chart(chart, use_container_width=True)
 
+def display_production_chart(site_df):
+    #Strip out all sites with no production.
+    chart_df = site_df[site_df['production_kw_total'] != 0]
+
+    chart_df.sort_values("production_kw_total", ascending=False, inplace=True)
+    color_scale = alt.Scale(
+        domain=["EN", "SE", "SMA", "Solis"],
+        range=["orange", "#8B0000", "steelblue", "#A65E2E"]
+    )
+
+    chart = alt.Chart(chart_df).mark_bar().encode(
+        x=alt.X('production_kw_total:Q', title='Production (kW)', axis=alt.Axis(orient='top')),
+        y=alt.Y(
+            'name:N',
+            title='Site Name',
+            sort=alt.SortField(field='production_kw_total', order='descending')
+        ),
+        color=alt.Color('vendor_code:N', scale=color_scale, title='Site Type'),
+        tooltip=[
+            alt.Tooltip('name:N', title='Site Name'),
+            alt.Tooltip('production_kw_total:Q', title='Production (kW)')
+        ]
+    ).properties(
+        title="Noon Production per Site",
+        height=len(chart_df) * 25
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+
 
 def process_alert_section(df, header_title, editor_key, save_button_label, column_config, drop_columns=None, alert_type=None, use_container_width=True):
     st.header(header_title)
@@ -199,7 +228,72 @@ def process_alert_section(df, header_title, editor_key, save_button_label, colum
         df = df[df['alert_type'] != alert_type]
     return df
 
-# Main Streamlit UI
+def create_alert_section(site_df, alerts_df):
+
+    # Merge alerts_df with site_df to add 'name' and 'url'
+    alerts_df = alerts_df.merge(site_df[['site_id', 'name', 'url']], on="site_id", how="left")
+
+    alerts_df = alerts_df.drop(columns=["history"], errors="ignore")
+
+    #Reorder columns
+    alerts_df = alerts_df[['site_id', 'name', 'url'] + [col for col in alerts_df.columns if col not in ['site_id', 'name', 'url']]]
+        
+    # Merge site history once for all alerts
+    merged_alerts_df = alerts_df.merge(
+        sites_history_df, on="site_id", how="left")
+
+    merged_alerts_df = process_alert_section(
+        merged_alerts_df,
+        header_title="Site Production failure",
+        alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
+        editor_key="production_production",
+        save_button_label="Save Production Site History Updates",
+        column_config={
+            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
+        },
+        drop_columns=["alert_type", "details", "resolved_date"],
+    )
+
+    merged_alerts_df = process_alert_section(
+        merged_alerts_df,
+        header_title="Site Communication failure",
+        alert_type=SolarPlatform.AlertType.NO_COMMUNICATION,
+        editor_key="comms_editor",
+        save_button_label="Save Communication Site History Updates",
+        column_config={
+            "url": st.column_config.LinkColumn(label="Site url", display_text="Link"),
+            "history": st.column_config.TextColumn(label="History                                                                                                     X")
+        },
+        drop_columns=["alert_type", "details", "severity"],
+        use_container_width=False
+    )
+
+    merged_alerts_df = process_alert_section(
+        merged_alerts_df,
+        header_title="Panel-level failures",
+        alert_type= SolarPlatform.AlertType.PANEL_ERROR,
+        editor_key="panel_editor",
+        save_button_label="Save Panel Site History Updates",
+        column_config={
+            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
+        }
+    )
+
+    process_alert_section(
+        merged_alerts_df,
+        header_title="System Configuration failure",
+        editor_key="sysconf_editor",
+        save_button_label="Save System Config Site History Updates",
+        column_config={
+            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
+        },
+        alert_type=None
+    )
+
+#    
+# Main Streamlit UI starts here
+#
+
 title = "☀️ AES Monitoring"
 st.set_page_config(page_title=title, layout="wide")
 Sql.init_fleet_db()
@@ -329,69 +423,11 @@ if authentication_status == True:
 
     site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
 
-    # Merge alerts_df with site_df to add 'name' and 'url'
-    alerts_df = alerts_df.merge(site_df[['site_id', 'name', 'url']], on="site_id", how="left")
-
-    alerts_df = alerts_df.drop(columns=["history"], errors="ignore")
-
-    #Reorder columns
-    alerts_df = alerts_df[['site_id', 'name', 'url'] + [col for col in alerts_df.columns if col not in ['site_id', 'name', 'url']]]
-
     # Fetch the site history
     sites_history_df = db.fetch_sites()[["site_id", "history"]]
 
     if not alerts_df.empty:
-        # Merge site history once for all alerts
-        merged_alerts_df = alerts_df.merge(
-            sites_history_df, on="site_id", how="left")
-
-        merged_alerts_df = process_alert_section(
-            merged_alerts_df,
-            header_title="Site Production failure",
-            alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
-            editor_key="production_production",
-            save_button_label="Save Production Site History Updates",
-            column_config={
-                "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-            },
-            drop_columns=["alert_type", "details", "resolved_date"],
-        )
-
-        merged_alerts_df = process_alert_section(
-            merged_alerts_df,
-            header_title="Site Communication failure",
-            alert_type=SolarPlatform.AlertType.NO_COMMUNICATION,
-            editor_key="comms_editor",
-            save_button_label="Save Communication Site History Updates",
-            column_config={
-                "url": st.column_config.LinkColumn(label="Site url", display_text="Link"),
-                "history": st.column_config.TextColumn(label="History                                                                                                     X")
-            },
-            drop_columns=["alert_type", "details", "severity"],
-            use_container_width=False
-        )
-
-        merged_alerts_df = process_alert_section(
-            merged_alerts_df,
-            header_title="Panel-level failures",
-            alert_type= SolarPlatform.AlertType.PANEL_ERROR,
-            editor_key="panel_editor",
-            save_button_label="Save Panel Site History Updates",
-            column_config={
-                "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-            }
-        )
-
-        process_alert_section(
-            merged_alerts_df,
-            header_title="System Configuration failure",
-            editor_key="sysconf_editor",
-            save_button_label="Save System Config Site History Updates",
-            column_config={
-                "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-            },
-            alert_type=None
-        )
+        create_alert_section(site_df, alerts_df)
     else:
         st.success("No active alerts.")
 
@@ -469,41 +505,13 @@ if authentication_status == True:
 
 
         create_map_view(site_df)
-
-        #Strip out all sites with no production.
-        site_df = site_df[site_df['production_kw_total'] != 0]
-        #site_df = site_df.dropna(subset=['production_kw_total'])
-
         st.markdown("---")    
+        display_production_chart(site_df)
 
-        site_df.sort_values("production_kw_total", ascending=False, inplace=True)
-        color_scale = alt.Scale(
-            domain=["EN", "SE", "SMA", "Solis"],
-            range=["orange", "#8B0000", "steelblue", "#A65E2E"]
-        )
-
-        chart = alt.Chart(site_df).mark_bar().encode(
-            x=alt.X('production_kw_total:Q', title='Production (kW)', axis=alt.Axis(orient='top')),
-            y=alt.Y(
-                'name:N',
-                title='Site Name',
-                sort=alt.SortField(field='production_kw_total', order='descending')
-            ),
-            color=alt.Color('vendor_code:N', scale=color_scale, title='Site Type'),
-            tooltip=[
-                alt.Tooltip('name:N', title='Site Name'),
-                alt.Tooltip('production_kw_total:Q', title='Production (kW)')
-            ]
-        ).properties(
-            title="Noon Production per Site",
-            height=len(site_df) * 25
-        )
-
-        st.altair_chart(chart, use_container_width=True)
     else:
         st.info("No production data available.")
 
-
+    #Show all sites
     st.dataframe(site_df)
 
 elif authentication_status == False:
