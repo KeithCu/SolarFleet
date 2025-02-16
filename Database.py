@@ -148,6 +148,17 @@ def fetch_all_batteries():
     session.close()
     return all_batteries
 
+def delete_all_batteries():
+    session = Sql.SessionLocal()
+    try:
+        session.query(Sql.Battery).delete()
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
 
 def get_valid_production_dates():
     historical_production_df = get_total_noon_kw()

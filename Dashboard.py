@@ -288,16 +288,9 @@ if authentication_status == True:
             st.success("Alerts cache cleared!")
 
     with col4:
-        if st.button("Delete Battery API Cache"):
-            # Delete cache entries for battery data.
-            battery_keys = [
-                key
-                for key in SolarPlatform.cache.iterkeys()
-                if key.startswith("get_battery_state_of_energy")
-            ]
-            for key in battery_keys:
-                del SolarPlatform.cache[key]
-            st.success("Battery cache cleared!")
+        if st.button("Delete Battery data"):
+            db.delete_all_batteries()
+            st.success("Battery data cleared!")
     with col5:
         if st.button("convert api_keys to keyring"):
             SolarPlatform.set_keyring_from_api_keys()
