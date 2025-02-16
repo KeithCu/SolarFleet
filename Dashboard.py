@@ -249,7 +249,9 @@ if authentication_status == True:
     num_sites = len(sites)
     st.metric("Sites In Fleet", num_sites)
 
-    st.markdown("---")
+    st.header("📊 Historical Production Data")
+    historical_df = db.get_total_noon_kw()
+    display_historical_chart(historical_df)
 
     production_set = db.get_production_set(None)
     df_prod = pd.DataFrame([asdict(record) for record in production_set])
@@ -448,13 +450,6 @@ if authentication_status == True:
             st.success("No battery data available.")
 
     st.header("🌍 Site Map with Production Data")
-
-    st.header("📊 Historical Production Data")
-    historical_df = db.get_total_noon_kw()
-    display_historical_chart(historical_df)
-
-    st.markdown("---")
-
 
     if not df_prod.empty and 'latitude' in site_df.columns:
         
