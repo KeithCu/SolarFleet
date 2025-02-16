@@ -146,16 +146,15 @@ def fetch_all_batteries():
     session.close()
     return all_batteries
 
-def get_total_noon_kw_all() -> List[Tuple[date, float]]:
+def get_total_noon_kw() -> pd.DataFrame:
     session = Sql.SessionLocal()
     try:
-        # Query both production_day and total_noon_kw
         results = session.query(
             Sql.ProductionHistory.production_day,
             Sql.ProductionHistory.total_noon_kw
         ).all()
-        # results is a list of tuples: [(date1, kw1), (date2, kw2), ...]
-        return results
+        df = pd.DataFrame(results, columns=['production_day', 'total_noon_kw'])
+        return df
     finally:
         session.close()
 

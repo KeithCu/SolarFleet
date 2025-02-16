@@ -5,9 +5,13 @@ import numpy as np
 import pandas as pd
 import folium
 import altair as alt
+import yaml
+from yaml.loader import SafeLoader
+
 import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_folium import st_folium
+import streamlit_authenticator as stauth
 
 import SolarPlatform
 import SqlModels as Sql
@@ -158,46 +162,17 @@ def create_map_view(sites_df):
     st_folium(m, width=1200)
 
 
-def display_historical_chart(historical_df, site_ids):
-    if not site_ids:
-        site_data = historical_df.copy()
-    else:
-        site_data = historical_df[historical_df['site_id'].isin(site_ids)]
+def display_historical_chart(historical_df):
 
-    # Aggregate the production by date (summing the production values)
-    agg_data = site_data.groupby("date", as_index=False)["production_kw"].sum()
-
-    chart = alt.Chart(agg_data).mark_line(size=5).encode(
-        x=alt.X('date:T', title='Date'),
-        y=alt.Y('production_kw:Q', title='Aggregated Production (KW)'),
-        tooltip=['date:T', 'power:Q']
+    chart = alt.Chart(historical_df).mark_line(size=5).encode(
+        x=alt.X('production_day:T', title='Date'),
+        y=alt.Y('total_noon_kw:Q', title='Aggregated Production (KW)'),
+        tooltip=['production_day:T', 'total_noon_kw:Q']
     ).properties(
-        title="Aggregated Historical Production Data"
+        title="Historical Production Data"
     )
 
     st.altair_chart(chart, use_container_width=True)
-
-
-def filter_and_sort_alerts(alerts_df, alert_filter, severity_filter, sort_by, ascending):
-    filtered_df = alerts_df.copy()
-    if alert_filter:
-        filtered_df = filtered_df[filtered_df['alert_type'].isin(alert_filter)]
-    if severity_filter:
-        filtered_df = filtered_df[filtered_df['severity'].isin(
-            severity_filter)]
-    if sort_by:
-        filtered_df = filtered_df.sort_values(by=sort_by, ascending=ascending)
-    return filtered_df
-
-
-def login():
-    password = st.text_input("Enter the password", type="password")
-    if st.button("Login"):
-        if password == "secret_password":
-            st.session_state.authenticated = True
-            st.success("Logged in successfully!")
-        else:
-            st.error("Incorrect password. Please try again.")
 
 
 def process_alert_section(df, header_title, editor_key, save_button_label, column_config, drop_columns=None, alert_type=None, use_container_width=True):
@@ -229,201 +204,215 @@ st.set_page_config(page_title=title, layout="wide")
 Sql.init_fleet_db()
 st.title(title)
 
-platform = SolarEdgePlatform()
-sites = platform.get_sites_map()
+with open('./config.yaml') as file:
+    config = yaml.load(file, Loader=SafeLoader)
 
-platform = EnphasePlatform()
-sites_enphase = platform.get_sites_map()
+with open('./credentials.yaml') as file:
+    credentials = yaml.load(file, Loader=SafeLoader)    
 
-sites.update(sites_enphase)
+authenticator = stauth.Authenticate(
+    credentials['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days'],
+)
 
-production_set = db.get_production_set(None)
-df_prod = pd.DataFrame([asdict(record) for record in production_set])
+if "authentication_status" not in st.session_state:
+    st.session_state["authentication_status"] = None
 
-with st.expander("Show Logs", expanded=False):
-    st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
+try:
+    auth_result = authenticator.login(location='main', key='Login')
+except Exception as e:
+    st.error(f"Login error: {e}")
+    auth_result = None
 
-platform.log("Starting application at " + str(datetime.now()))
-
-# Create columns
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-
-# Place buttons in columns
-with col1:
-    if st.button("Run Data Collection"):
-        run_collection()
-
-with col2:
-    if st.button("Delete Alerts (Test)"):
-        db.delete_all_alerts()
-        st.success("All alerts deleted!")
-
-with col3:
-    if st.button("Delete Alerts API Cache"):
-        # Find cache keys that start with 'get_alerts'
-        alerts_cache_keys = [
-            key for key in SolarPlatform.cache.iterkeys()
-            if key.startswith("get_alerts")
-        ]
-        # Delete each matching key from the cache
-        for key in alerts_cache_keys:
-            del SolarPlatform.cache[key]
-        st.success("Alerts cache cleared!")
-
-with col4:
-    if st.button("Delete Battery API Cache"):
-        # Delete cache entries for battery data.
-        battery_keys = [
-            key
-            for key in SolarPlatform.cache.iterkeys()
-            if key.startswith("get_battery_state_of_energy")
-        ]
-        for key in battery_keys:
-            del SolarPlatform.cache[key]
-        st.success("Battery cache cleared!")
-with col5:
-    if st.button("convert api_keys to keyring"):
-        SolarPlatform.set_keyring_from_api_keys()
-with col6:
-    if st.button("Clear Logs"):
-        SolarPlatform.cache.delete("global_logs")
-
-
-st.markdown("---")
-
-st.header("🚨 Active Alerts")
-
-alerts_df = db.fetch_alerts()
-alerts_df = alerts_df.drop(columns=["name", "url"], errors="ignore")
-
-# Generate synthetic alerts for sites with production below 0.1 kW
-existing_alert_sites = set(alerts_df['site_id'].unique())
-synthetic_alerts = []
-for record in production_set:
-    if has_low_production(record.production_kw) and record.site_id not in existing_alert_sites:
-        synthetic_alert = SolarPlatform.SolarAlert(
-            site_id=record.site_id,
-            alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
-            severity=100,
-            details="",
-            first_triggered=datetime.utcnow()
-        )
-        synthetic_alerts.append(synthetic_alert)
-
-if synthetic_alerts:
-    synthetic_df = pd.DataFrame([asdict(alert) for alert in synthetic_alerts])
-    alerts_df = pd.concat([alerts_df, synthetic_df], ignore_index=True)
-
-site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
-
-# Merge alerts_df with site_df to add 'name' and 'url'
-alerts_df = alerts_df.merge(site_df[['site_id', 'name', 'url']], on="site_id", how="left")
-
-alerts_df = alerts_df.drop(columns=["history"], errors="ignore")
-
-#Reorder columns
-alerts_df = alerts_df[['site_id', 'name', 'url'] + [col for col in alerts_df.columns if col not in ['site_id', 'name', 'url']]]
-
-# Fetch the site history
-sites_history_df = db.fetch_sites()[["site_id", "history"]]
-
-if not alerts_df.empty:
-    # Merge site history once for all alerts
-    merged_alerts_df = alerts_df.merge(
-        sites_history_df, on="site_id", how="left")
-
-    merged_alerts_df = process_alert_section(
-        merged_alerts_df,
-        header_title="Site Production failure",
-        alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
-        editor_key="production_production",
-        save_button_label="Save Production Site History Updates",
-        column_config={
-            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-        },
-        drop_columns=["alert_type", "details", "resolved_date"],
-    )
-
-    merged_alerts_df = process_alert_section(
-        merged_alerts_df,
-        header_title="Site Communication failure",
-        alert_type=SolarPlatform.AlertType.NO_COMMUNICATION,
-        editor_key="comms_editor",
-        save_button_label="Save Communication Site History Updates",
-        column_config={
-            "url": st.column_config.LinkColumn(label="Site url", display_text="Link"),
-            "history": st.column_config.TextColumn(label="History                                                                                                     X")
-        },
-        drop_columns=["alert_type", "details", "severity"],
-        use_container_width=False
-    )
-
-    merged_alerts_df = process_alert_section(
-        merged_alerts_df,
-        header_title="Panel-level failures",
-        alert_type= SolarPlatform.AlertType.PANEL_ERROR,
-        editor_key="panel_editor",
-        save_button_label="Save Panel Site History Updates",
-        column_config={
-            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-        }
-    )
-
-    process_alert_section(
-        merged_alerts_df,
-        header_title="System Configuration failure",
-        editor_key="sysconf_editor",
-        save_button_label="Save System Config Site History Updates",
-        column_config={
-            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-        },
-        alert_type=None
-    )
+if auth_result is not None:
+    name, authentication_status, username = auth_result
 else:
-    st.success("No active alerts.")
+    authentication_status = st.session_state.get("authentication_status", None)
 
-st.header("🔋 Batteries Below 10%")
-low_batteries_df = db.fetch_low_batteries()
-if not low_batteries_df.empty:
-    # Merge battery info with site data to include 'name' and 'url'
-    low_batteries_df = low_batteries_df.merge(
-        site_df[['site_id', 'name', 'url']],
-        on="site_id",
-        how="left"
-    )
-    # Reorder columns: site_id, name, url first, then the rest.
-    cols = low_batteries_df.columns.tolist()
-    new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
-    low_batteries_df = low_batteries_df[new_order]
+if authentication_status == True:
+    authenticator.logout('Logout', 'main')
     
-    st.data_editor(
-        low_batteries_df,
-        key="low_batteries_editor",
-        use_container_width=True,
-        column_config={
-            "url": st.column_config.LinkColumn(label="Site URL", display_text="Link")
-        },
-        disabled=True
-    )
-else:
-    st.success("All batteries above 10%.")
+    #
+    # After authentication
+    #
 
-with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
-    all_batteries_df = db.fetch_all_batteries()
-    if all_batteries_df is not None and not all_batteries_df.empty:
-        all_batteries_df = all_batteries_df.merge(
+    platform = SolarEdgePlatform()
+    sites = platform.get_sites_map()
+
+    platform = EnphasePlatform()
+    sites_enphase = platform.get_sites_map()
+
+    sites.update(sites_enphase)
+
+    num_sites = len(sites)
+    st.metric("Sites In Fleet", num_sites)
+
+    st.markdown("---")
+
+    production_set = db.get_production_set(None)
+    df_prod = pd.DataFrame([asdict(record) for record in production_set])
+
+    with st.expander("Show Logs", expanded=False):
+        st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
+
+    platform.log("Starting application at " + str(datetime.now()))
+
+    # Create columns
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+    # Place buttons in columns
+    with col1:
+        if st.button("Run Data Collection"):
+            run_collection()
+
+    with col2:
+        if st.button("Delete Alerts (Test)"):
+            db.delete_all_alerts()
+            st.success("All alerts deleted!")
+
+    with col3:
+        if st.button("Delete Alerts API Cache"):
+            # Find cache keys that start with 'get_alerts'
+            alerts_cache_keys = [
+                key for key in SolarPlatform.cache.iterkeys()
+                if key.startswith("get_alerts")
+            ]
+            # Delete each matching key from the cache
+            for key in alerts_cache_keys:
+                del SolarPlatform.cache[key]
+            st.success("Alerts cache cleared!")
+
+    with col4:
+        if st.button("Delete Battery API Cache"):
+            # Delete cache entries for battery data.
+            battery_keys = [
+                key
+                for key in SolarPlatform.cache.iterkeys()
+                if key.startswith("get_battery_state_of_energy")
+            ]
+            for key in battery_keys:
+                del SolarPlatform.cache[key]
+            st.success("Battery cache cleared!")
+    with col5:
+        if st.button("convert api_keys to keyring"):
+            SolarPlatform.set_keyring_from_api_keys()
+    with col6:
+        if st.button("Clear Logs"):
+            SolarPlatform.cache.delete("global_logs")
+
+
+    st.markdown("---")
+
+    st.header("🚨 Active Alerts")
+
+    alerts_df = db.fetch_alerts()
+    alerts_df = alerts_df.drop(columns=["name", "url"], errors="ignore")
+
+    # Generate synthetic alerts for sites with production below 0.1 kW
+    existing_alert_sites = set(alerts_df['site_id'].unique())
+    synthetic_alerts = []
+    for record in production_set:
+        if has_low_production(record.production_kw) and record.site_id not in existing_alert_sites:
+            synthetic_alert = SolarPlatform.SolarAlert(
+                site_id=record.site_id,
+                alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
+                severity=100,
+                details="",
+                first_triggered=datetime.utcnow()
+            )
+            synthetic_alerts.append(synthetic_alert)
+
+    if synthetic_alerts:
+        synthetic_df = pd.DataFrame([asdict(alert) for alert in synthetic_alerts])
+        alerts_df = pd.concat([alerts_df, synthetic_df], ignore_index=True)
+
+    site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
+
+    # Merge alerts_df with site_df to add 'name' and 'url'
+    alerts_df = alerts_df.merge(site_df[['site_id', 'name', 'url']], on="site_id", how="left")
+
+    alerts_df = alerts_df.drop(columns=["history"], errors="ignore")
+
+    #Reorder columns
+    alerts_df = alerts_df[['site_id', 'name', 'url'] + [col for col in alerts_df.columns if col not in ['site_id', 'name', 'url']]]
+
+    # Fetch the site history
+    sites_history_df = db.fetch_sites()[["site_id", "history"]]
+
+    if not alerts_df.empty:
+        # Merge site history once for all alerts
+        merged_alerts_df = alerts_df.merge(
+            sites_history_df, on="site_id", how="left")
+
+        merged_alerts_df = process_alert_section(
+            merged_alerts_df,
+            header_title="Site Production failure",
+            alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
+            editor_key="production_production",
+            save_button_label="Save Production Site History Updates",
+            column_config={
+                "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
+            },
+            drop_columns=["alert_type", "details", "resolved_date"],
+        )
+
+        merged_alerts_df = process_alert_section(
+            merged_alerts_df,
+            header_title="Site Communication failure",
+            alert_type=SolarPlatform.AlertType.NO_COMMUNICATION,
+            editor_key="comms_editor",
+            save_button_label="Save Communication Site History Updates",
+            column_config={
+                "url": st.column_config.LinkColumn(label="Site url", display_text="Link"),
+                "history": st.column_config.TextColumn(label="History                                                                                                     X")
+            },
+            drop_columns=["alert_type", "details", "severity"],
+            use_container_width=False
+        )
+
+        merged_alerts_df = process_alert_section(
+            merged_alerts_df,
+            header_title="Panel-level failures",
+            alert_type= SolarPlatform.AlertType.PANEL_ERROR,
+            editor_key="panel_editor",
+            save_button_label="Save Panel Site History Updates",
+            column_config={
+                "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
+            }
+        )
+
+        process_alert_section(
+            merged_alerts_df,
+            header_title="System Configuration failure",
+            editor_key="sysconf_editor",
+            save_button_label="Save System Config Site History Updates",
+            column_config={
+                "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
+            },
+            alert_type=None
+        )
+    else:
+        st.success("No active alerts.")
+
+    st.header("🔋 Batteries Below 10%")
+    low_batteries_df = db.fetch_low_batteries()
+    if not low_batteries_df.empty:
+        # Merge battery info with site data to include 'name' and 'url'
+        low_batteries_df = low_batteries_df.merge(
             site_df[['site_id', 'name', 'url']],
             on="site_id",
             how="left"
         )
         # Reorder columns: site_id, name, url first, then the rest.
-        cols = all_batteries_df.columns.tolist()
+        cols = low_batteries_df.columns.tolist()
         new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
-        all_batteries_df = all_batteries_df[new_order]
+        low_batteries_df = low_batteries_df[new_order]
         
         st.data_editor(
-            all_batteries_df,
-            key="all_batteries_editor",
+            low_batteries_df,
+            key="low_batteries_editor",
             use_container_width=True,
             column_config={
                 "url": st.column_config.LinkColumn(label="Site URL", display_text="Link")
@@ -431,49 +420,85 @@ with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
             disabled=True
         )
     else:
-        st.success("No battery data available.")
+        st.success("All batteries above 10%.")
 
-st.header("🌍 Site Map with Production Data")
+    with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
+        all_batteries_df = db.fetch_all_batteries()
+        if all_batteries_df is not None and not all_batteries_df.empty:
+            all_batteries_df = all_batteries_df.merge(
+                site_df[['site_id', 'name', 'url']],
+                on="site_id",
+                how="left"
+            )
+            # Reorder columns: site_id, name, url first, then the rest.
+            cols = all_batteries_df.columns.tolist()
+            new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
+            all_batteries_df = all_batteries_df[new_order]
+            
+            st.data_editor(
+                all_batteries_df,
+                key="all_batteries_editor",
+                use_container_width=True,
+                column_config={
+                    "url": st.column_config.LinkColumn(label="Site URL", display_text="Link")
+                },
+                disabled=True
+            )
+        else:
+            st.success("No battery data available.")
 
+    st.header("🌍 Site Map with Production Data")
 
+    st.header("📊 Historical Production Data")
+    historical_df = db.get_total_noon_kw()
+    display_historical_chart(historical_df)
 
-
-if not df_prod.empty and 'latitude' in site_df.columns:
-    
-    site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
-    site_df = site_df.merge(df_prod, on="site_id", how="left")
-
-    site_df['production_kw_total'] = site_df['production_kw'].apply(SolarPlatform.calculate_production_kw)
-    site_df['production_kw'] = site_df['production_kw'].round(2)
-
-    create_map_view(site_df)
-
-    site_df.sort_values("production_kw", ascending=False, inplace=True)
-    color_scale = alt.Scale(
-        domain=["EN", "SE", "SMA"],
-        range=["orange", "#8B0000", "steelblue"]
-    )
-
-    chart = alt.Chart(site_df).mark_bar().encode(
-        x=alt.X('production_kw:Q', title='Production (kW)'),
-        y=alt.Y(
-            'name:N',
-            title='Site Name',
-            sort=alt.SortField(field='production_kw', order='descending')
-        ),
-        color=alt.Color('vendor_code:N', scale=color_scale, title='Site Type'),
-        tooltip=[
-            alt.Tooltip('name:N', title='Site Name'),
-            alt.Tooltip('production_kw:Q', title='Production (kW)')
-        ]
-    ).properties(
-        title="Noon Production per Site",
-        height=len(site_df) * 25
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-else:
-    st.info("No production data available.")
+    st.markdown("---")
 
 
-st.dataframe(site_df)
+    if not df_prod.empty and 'latitude' in site_df.columns:
+        
+        site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
+        site_df = site_df.merge(df_prod, on="site_id", how="left")
+
+        site_df['production_kw_total'] = site_df['production_kw'].apply(SolarPlatform.calculate_production_kw)
+        site_df['production_kw'] = site_df['production_kw'].round(2)
+
+        create_map_view(site_df)
+
+        st.markdown("---")    
+
+        site_df.sort_values("production_kw", ascending=False, inplace=True)
+        color_scale = alt.Scale(
+            domain=["EN", "SE", "SMA"],
+            range=["orange", "#8B0000", "steelblue"]
+        )
+
+        chart = alt.Chart(site_df).mark_bar().encode(
+            x=alt.X('production_kw:Q', title='Production (kW)'),
+            y=alt.Y(
+                'name:N',
+                title='Site Name',
+                sort=alt.SortField(field='production_kw', order='descending')
+            ),
+            color=alt.Color('vendor_code:N', scale=color_scale, title='Site Type'),
+            tooltip=[
+                alt.Tooltip('name:N', title='Site Name'),
+                alt.Tooltip('production_kw:Q', title='Production (kW)')
+            ]
+        ).properties(
+            title="Noon Production per Site",
+            height=len(site_df) * 25
+        )
+
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        st.info("No production data available.")
+
+
+    st.dataframe(site_df)
+
+elif authentication_status == False:
+    st.error('Username/password is incorrect')
+elif authentication_status == None:
+    st.warning('Please enter your username and password')
