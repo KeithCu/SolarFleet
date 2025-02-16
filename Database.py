@@ -265,8 +265,7 @@ def process_bulk_solar_production(
     # Compute average production for sanity check.
     production_kw = 0.0
     for site in production_data:
-        for inverter_prod in SolarPlatform.calculate_production_kw(site.production_kw):
-            production_kw += inverter_prod
+        production_kw += SolarPlatform.calculate_production_kw(site.production_kw)
 
     avg_prod = production_kw / len(production_data)
     # if avg_prod < sunny_threshold and not recalibrate:
