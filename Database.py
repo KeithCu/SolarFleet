@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import BallTree
 
+from sqlalchemy.orm.attributes import flag_modified
+
 import SqlModels as Sql
 import SolarPlatform
 
@@ -179,37 +181,35 @@ def get_production_set(production_day: datetime = None) -> set:
 def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord], production_day):
     session = Sql.SessionLocal()
     try:
-        # Retrieve the existing record by primary key using session.get()
-        existing = session.get(Sql.ProductionHistory, production_day)
+        existing_record = session.get(Sql.ProductionHistory, production_day)
 
-        #fixme, still doesn't work.
-        if existing:
-            combined_set = new_data.copy()
-            combined_set.update(existing.data)
+        if existing_record:
+            # Build a dictionary from the existing set keyed by site_id
+            data_dict = {record.site_id: record for record in existing_record.data}
+            # Update or add new records; this replaces records with matching site_id
+            for record in new_data:
+                data_dict[record.site_id] = record
+            # Replace the set with the updated records
+            existing_record.data = set(data_dict.values())
+            flag_modified(existing_record, "data")
+            session.add(existing_record)
+            print(f"Craun Rd data: SE:2848428 data: {data_dict['SE:2848428']}")                   
         else:
-            # If no record exists, use a copy of new_data.
-            combined_set = new_data.copy()
+            existing_record = Sql.ProductionHistory(production_day=production_day, data=new_data)
+            session.add(existing_record)
 
-        # calculate the total noon production for all sites, to use for historical purposes.
-        total_noon_kw = 0
-        for site in combined_set:
-            total_noon_kw += SolarPlatform.calculate_production_kw(site.production_kw)
-
-        # Create a fresh instance with the merged data.
-        new_record = Sql.ProductionHistory(production_day = production_day, data = combined_set, total_noon_kw = total_noon_kw)
-
-        # session.merge() will check if a record with the given primary key exists;
-        # if so, it will update that record with new_record’s state, otherwise it will add a new record.
-        merged_record = session.merge(new_record)
+        # Calculate total noon production (using the updated data)
+        total_noon_kw = sum(SolarPlatform.calculate_production_kw(site.production_kw) for site in existing_record.data)
+        existing_record.total_noon_kw = total_noon_kw
 
         session.commit()
-        return merged_record
+        return existing_record
+
     except Exception as e:
         session.rollback()
         raise e
     finally:
         session.close()
-
 
 # Bulk process a list of SolarProduction data.
 

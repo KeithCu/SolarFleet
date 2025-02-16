@@ -77,8 +77,13 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         sites_dict = {}
 
         for site in sites:
-            site_url = SOLAREDGE_SITE_URL + str(site.get('siteId'))
-            site_id = cls.add_vendorcodeprefix(site.get('siteId'))
+            raw_site_id = site.get('siteId')
+            inverters = cls.get_inverters(raw_site_id)
+            if inverters == []:
+                print (f"Skipping site {raw_site_id} as it has no inverters.")
+                continue
+            site_url = SOLAREDGE_SITE_URL + str(raw_site_id)
+            site_id = cls.add_vendorcodeprefix(raw_site_id)
             zipcode = site['location']['zip']
             name = site.get('name')
             if SolarPlatform.FAKE_DATA:

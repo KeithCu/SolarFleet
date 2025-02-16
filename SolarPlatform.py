@@ -62,20 +62,20 @@ def extract_vendor_code(site_id):
     else:
         raise ValueError(f"Invalid site_id: {site_id}. Expected a vendor code prefix + :")
 
-# For each day, we store a set of ProductionRecord objects, one for each site.
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str
     production_kw: List[float]
 
-    # Two ProductionRecord objects are considered equal if they share the same vendor and site.
     def __hash__(self):
-        return hash((self.site_id))
+        # Include production_kw in the hash (convert list to tuple)
+        return hash((self.site_id, tuple(self.production_kw)))
 
     def __eq__(self, other):
         if not isinstance(other, ProductionRecord):
             return NotImplemented
-        return (self.site_id) == (other.site_id)
+        return (self.site_id, self.production_kw) == (other.site_id, other.production_kw)
+
 
 def calculate_production_kw(item):
     if isinstance(item, list):
