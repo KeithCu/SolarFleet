@@ -468,23 +468,23 @@ if authentication_status == True:
 
         st.markdown("---")    
 
-        site_df.sort_values("production_kw", ascending=False, inplace=True)
+        site_df.sort_values("production_kw_total", ascending=False, inplace=True)
         color_scale = alt.Scale(
             domain=["EN", "SE", "SMA"],
             range=["orange", "#8B0000", "steelblue"]
         )
 
         chart = alt.Chart(site_df).mark_bar().encode(
-            x=alt.X('production_kw:Q', title='Production (kW)'),
+            x=alt.X('production_kw_total:Q', title='Production (kW)'),
             y=alt.Y(
                 'name:N',
                 title='Site Name',
-                sort=alt.SortField(field='production_kw', order='descending')
+                sort=alt.SortField(field='production_kw_total', order='descending')
             ),
             color=alt.Color('vendor_code:N', scale=color_scale, title='Site Type'),
             tooltip=[
                 alt.Tooltip('name:N', title='Site Name'),
-                alt.Tooltip('production_kw:Q', title='Production (kW)')
+                alt.Tooltip('production_kw_total:Q', title='Production (kW)')
             ]
         ).properties(
             title="Noon Production per Site",
