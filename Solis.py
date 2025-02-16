@@ -70,23 +70,27 @@ class SolisCloudPlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
-    def get_user_station_list(cls, page_no: int = 1, page_size: int = 20) -> dict:
-        params = {"pageNo": page_no, "pageSize": page_size}
-        return cls._fetch_api_data(USER_STATION_LIST, params)
-
+    def get_user_station_list(cls, page_size: int = 100) -> dict:
+        all_stations = []
+        page_no = 1
+        while True:
+            params = {"pageNo": page_no, "pageSize": page_size}
+            response = cls._fetch_api_data(USER_STATION_LIST, params)
+            # Assuming the API returns the stations under a "data" key
+            stations = response.get("data", [])
+            if not stations:
+                break
+            all_stations.extend(stations)
+            if len(stations) < page_size:
+                break
+            page_no += 1
+        return {"data": all_stations}
+    
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
     def get_station_detail(cls, station_id: int) -> dict:
         params = {"id": station_id}
         return cls._fetch_api_data(STATION_DETAIL, params)
-
-    @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
-    def get_collector_list(cls, page_no: int = 1, page_size: int = 20, station_id: int = None) -> dict:
-        params = {"pageNo": page_no, "pageSize": page_size}
-        if station_id:
-            params["stationId"] = station_id
-        return cls._fetch_api_data(COLLECTOR_LIST, params)
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)

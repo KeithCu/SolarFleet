@@ -465,8 +465,8 @@ if authentication_status == True:
 
         site_df.sort_values("production_kw_total", ascending=False, inplace=True)
         color_scale = alt.Scale(
-            domain=["EN", "SE", "SMA"],
-            range=["orange", "#8B0000", "steelblue"]
+            domain=["EN", "SE", "SMA", "Solis"],
+            range=["orange", "#8B0000", "steelblue", "#A65E2E"]
         )
 
         chart = alt.Chart(site_df).mark_bar().encode(
