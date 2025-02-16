@@ -23,7 +23,7 @@ cache = diskcache.Cache(".")
 class BatteryInfo:
     serial_number: str
     model_name: str
-    state_of_energy: str
+    state_of_energy: str # State of energy / charge in percentage
 
 
 @dataclass(frozen=True)

@@ -474,7 +474,12 @@ if authentication_status == True:
         site_df['production_kw_total'] = site_df['production_kw'].apply(SolarPlatform.calculate_production_kw)
         site_df['production_kw'] = site_df['production_kw'].round(2)
 
+
         create_map_view(site_df)
+
+        #Strip out all sites with no production.
+        site_df = site_df[site_df['production_kw_total'] != 0]
+        #site_df = site_df.dropna(subset=['production_kw_total'])
 
         st.markdown("---")    
 

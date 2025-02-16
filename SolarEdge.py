@@ -157,9 +157,10 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         for battery in batteries:
             serial_number = battery.get('serialNumber')
             soe = cls.get_battery_state_of_energy(raw_site_id, serial_number)
+            soe_pct = soe * 100 if soe is not None else 0
 
             battery_states.append({'serialNumber': serial_number, 'model': battery.get(
-                'model'), 'stateOfEnergy': soe})
+                'model'), 'stateOfEnergy': soe_pct})
 
         return battery_states
 
@@ -196,9 +197,6 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     def get_production(cls, site_id, reference_time) -> List[float]:
         raw_site_id = cls.strip_vendorcodeprefix(site_id)
         inverters = cls.get_inverters(raw_site_id)
-
-        if raw_site_id == "2848428":
-            print("Inverters: ", inverters)
 
         productions = []
         for inverter in inverters:

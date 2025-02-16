@@ -134,7 +134,7 @@ def delete_all_alerts():
 def fetch_low_batteries():
     session = Sql.SessionLocal()
     query = session.query(Sql.Battery).filter(
-        (Sql.Battery.state_of_energy < 0.10) | (Sql.Battery.state_of_energy.is_(None)))
+        (Sql.Battery.state_of_energy < 10) | (Sql.Battery.state_of_energy.is_(None)))
     low_batteries = pd.read_sql(query.statement, session.bind)
     session.close()
     return low_batteries
@@ -202,7 +202,6 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
             existing_record.data = set(data_dict.values())
             flag_modified(existing_record, "data")
             session.add(existing_record)
-            print(f"Craun Rd data: SE:2848428 data: {data_dict['SE:2848428']}")                   
         else:
             existing_record = Sql.ProductionHistory(production_day=production_day, data=new_data)
             session.add(existing_record)
