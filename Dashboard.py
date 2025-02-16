@@ -470,7 +470,7 @@ if authentication_status == True:
         )
 
         chart = alt.Chart(site_df).mark_bar().encode(
-            x=alt.X('production_kw_total:Q', title='Production (kW)'),
+            x=alt.X('production_kw_total:Q', title='Production (kW)', axis=alt.Axis(orient='top')),
             y=alt.Y(
                 'name:N',
                 title='Site Name',

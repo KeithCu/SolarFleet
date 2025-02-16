@@ -104,12 +104,14 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return devices 
     
 
+    #Sort by created_time so that the order is stable.
     @classmethod
     def get_inverters(cls, raw_site_id):
         devices = cls.get_devices(raw_site_id)
 
-        inverters = [device for device in devices if device.get('type') == 'INVERTER']
-        return inverters
+        inverters = [device for device in devices if device.get('type') == 'INVERTER' and device.get('active') == True]
+        sorted_data = sorted(inverters, key=lambda x: x['createdAt'])
+        return sorted_data
 
 
     @classmethod
@@ -185,11 +187,13 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         power = round(power, 2)
         return power
 
-
     @classmethod
     def get_production(cls, site_id, reference_time) -> List[float]:
         raw_site_id = cls.strip_vendorcodeprefix(site_id)
         inverters = cls.get_inverters(raw_site_id)
+
+        if raw_site_id == "2848428":
+            print("Inverters: ", inverters)
 
         productions = []
         for inverter in inverters:

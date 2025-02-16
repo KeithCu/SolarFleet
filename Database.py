@@ -182,9 +182,10 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
         # Retrieve the existing record by primary key using session.get()
         existing = session.get(Sql.ProductionHistory, production_day)
 
+        #fixme, still doesn't work.
         if existing:
-            combined_set = existing.data.copy()
-            combined_set.update(new_data)
+            combined_set = new_data.copy()
+            combined_set.update(existing.data)
         else:
             # If no record exists, use a copy of new_data.
             combined_set = new_data.copy()
