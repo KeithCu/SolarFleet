@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from datetime import date
 from dataclasses import asdict
 import requests
 import numpy as np
@@ -253,8 +254,8 @@ if authentication_status == True:
     historical_df = db.get_total_noon_kw()
     display_historical_chart(historical_df)
 
-    production_set = db.get_production_set(None)
-    df_prod = pd.DataFrame([asdict(record) for record in production_set])
+    valid_production_dates = db.get_valid_production_dates()
+    recent_noon = SolarPlatform.get_recent_noon().date()
 
     with st.expander("Show Logs", expanded=False):
         st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
@@ -306,6 +307,9 @@ if authentication_status == True:
 
 
     st.markdown("---")
+
+    production_set = db.get_production_set(recent_noon)
+    df_prod = pd.DataFrame([asdict(record) for record in production_set])
 
     st.header("🚨 Active Alerts")
 
@@ -450,6 +454,17 @@ if authentication_status == True:
             st.success("No battery data available.")
 
     st.header("🌍 Site Map with Production Data")
+
+    selected_date = st.date_input(
+        "Select Date",
+        recent_noon,
+        min_value=min(valid_production_dates),
+        max_value=max(valid_production_dates)
+    )
+
+    production_set = db.get_production_set(selected_date)
+    df_prod = pd.DataFrame([asdict(record) for record in production_set])
+
 
     if not df_prod.empty and 'latitude' in site_df.columns:
         

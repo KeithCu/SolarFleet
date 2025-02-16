@@ -3,7 +3,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from zoneinfo import ZoneInfo
 import streamlit as st
-from typing import List, Dict
+from typing import List, Dict, Union
 import diskcache
 import pprint
 from enum import Enum
@@ -65,7 +65,24 @@ def extract_vendor_code(site_id):
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str
-    production_kw: List[float]
+    production_kw: Union[float, List[float]]
+
+    def __post_init__(self):
+        # Ensure production_kw is always a list of floats
+        if isinstance(self.production_kw, float):
+            object.__setattr__(self, 'production_kw', [self.production_kw])
+        elif not isinstance(self.production_kw, list):
+            raise TypeError("production_kw must be a float or a list of floats")
+        else:
+            for item in self.production_kw:
+                if not isinstance(item, float):
+                    raise TypeError("production_kw list must contain only floats")
+
+    def __setstate__(self, state):
+        # Update the instance's __dict__ with the state
+        object.__setattr__(self, '__dict__', state)
+        # Call __post_init__ to ensure production_kw is properly set
+        self.__post_init__()
 
     def __hash__(self):
         # Include production_kw in the hash (convert list to tuple)
@@ -74,7 +91,7 @@ class ProductionRecord:
     def __eq__(self, other):
         if not isinstance(other, ProductionRecord):
             return NotImplemented
-        return (self.site_id, self.production_kw) == (other.site_id, other.production_kw)
+        return (self.site_id, tuple(self.production_kw)) == (other.site_id, tuple(other.production_kw))
 
 
 def calculate_production_kw(item):

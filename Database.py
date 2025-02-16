@@ -148,6 +148,15 @@ def fetch_all_batteries():
     session.close()
     return all_batteries
 
+
+def get_valid_production_dates():
+    historical_production_df = get_total_noon_kw()
+    if not historical_production_df.empty:
+        valid_dates = historical_production_df['production_day'].tolist()
+        return valid_dates
+    else:
+        return [datetime.now().date()]
+    
 def get_total_noon_kw() -> pd.DataFrame:
     session = Sql.SessionLocal()
     try:
@@ -161,14 +170,14 @@ def get_total_noon_kw() -> pd.DataFrame:
         session.close()
 
 
-def get_production_set(production_day: datetime = None) -> set:
+def get_production_set(production_day: date = None) -> set:
     session = Sql.SessionLocal()
     try:
         query = session.query(Sql.ProductionHistory)
         if production_day is None:
             record = query.order_by(Sql.ProductionHistory.production_day.desc()).first()
         else:
-            production_date = production_day.date()
+            production_date = production_day
             record = query.filter_by(production_day=production_date).first()
 
         if record:
