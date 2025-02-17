@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from datetime import date
 from dataclasses import asdict
-import requests
 import numpy as np
 import pandas as pd
 import folium
@@ -179,6 +178,7 @@ def display_production_chart(site_df):
     #Strip out all sites with no production.
     chart_df = site_df[site_df['production_kw_total'] != 0]
 
+    chart_df = chart_df.copy() 
     chart_df.sort_values("production_kw_total", ascending=False, inplace=True)
     color_scale = alt.Scale(
         domain=["EN", "SE", "SMA", "Solis"],
@@ -276,7 +276,8 @@ def create_alert_section(site_df, alerts_df):
         save_button_label="Save Panel Site History Updates",
         column_config={
             "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-        }
+        },
+        drop_columns=["alert_type", "details"],
     )
 
     process_alert_section(
@@ -290,11 +291,62 @@ def create_alert_section(site_df, alerts_df):
         alert_type=None
     )
 
+def display_battery_section():
+    st.header("🔋 Batteries Below 10%")
+    low_batteries_df = db.fetch_low_batteries()
+    if not low_batteries_df.empty:
+        # Merge battery info with site data to include 'name' and 'url'
+        low_batteries_df = low_batteries_df.merge(
+            site_df[['site_id', 'name', 'url']],
+            on="site_id",
+            how="left"
+        )
+        # Reorder columns: site_id, name, url first, then the rest.
+        cols = low_batteries_df.columns.tolist()
+        new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
+        low_batteries_df = low_batteries_df[new_order]
+        
+        st.data_editor(
+            low_batteries_df,
+            key="low_batteries_editor",
+            use_container_width=True,
+            column_config={
+                "url": st.column_config.LinkColumn(label="Site URL", display_text="Link")
+            },
+            disabled=True
+        )
+    else:
+        st.success("All batteries above 10%.")
+
+    with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
+        all_batteries_df = db.fetch_all_batteries()
+        if all_batteries_df is not None and not all_batteries_df.empty:
+            all_batteries_df = all_batteries_df.merge(
+                site_df[['site_id', 'name', 'url']],
+                on="site_id",
+                how="left"
+            )
+            # Reorder columns: site_id, name, url first, then the rest.
+            cols = all_batteries_df.columns.tolist()
+            new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
+            all_batteries_df = all_batteries_df[new_order]
+            
+            st.data_editor(
+                all_batteries_df,
+                key="all_batteries_editor",
+                use_container_width=True,
+                column_config={
+                    "url": st.column_config.LinkColumn(label="Site URL", display_text="Link")
+                },
+                disabled=True
+            )
+
+
 #    
 # Main Streamlit UI starts here
 #
 
-title = "☀️ AES Monitoring"
+title = "☀️ Absolute Solar Monitoring"
 st.set_page_config(page_title=title, layout="wide")
 Sql.init_fleet_db()
 st.title(title)
@@ -363,26 +415,19 @@ if authentication_status == True:
     with col1:
         if st.button("Run Data Collection"):
             run_collection()
-
+            st.success("Collection complete!")
     with col2:
         if st.button("Delete Alerts (Test)"):
             db.delete_all_alerts()
             st.success("All alerts deleted!")
-
     with col3:
-        if st.button("Delete Alerts API Cache"):
-            # Find cache keys that start with 'get_alerts'
-            alerts_cache_keys = [
-                key for key in SolarPlatform.cache.iterkeys()
-                if key.startswith("get_alerts")
-            ]
-            # Delete each matching key from the cache
+        if st.button("Delete Alerts API Cache (Test)"):
+            alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
             for key in alerts_cache_keys:
                 del SolarPlatform.cache[key]
             st.success("Alerts cache cleared!")
-
     with col4:
-        if st.button("Delete Battery data"):
+        if st.button("Delete Battery data (Test)"):
             db.delete_all_batteries()
             st.success("Battery data cleared!")
     with col5:
@@ -391,7 +436,6 @@ if authentication_status == True:
     with col6:
         if st.button("Clear Logs"):
             SolarPlatform.cache.delete("global_logs")
-
 
     st.markdown("---")
 
@@ -431,56 +475,7 @@ if authentication_status == True:
     else:
         st.success("No active alerts.")
 
-    st.header("🔋 Batteries Below 10%")
-    low_batteries_df = db.fetch_low_batteries()
-    if not low_batteries_df.empty:
-        # Merge battery info with site data to include 'name' and 'url'
-        low_batteries_df = low_batteries_df.merge(
-            site_df[['site_id', 'name', 'url']],
-            on="site_id",
-            how="left"
-        )
-        # Reorder columns: site_id, name, url first, then the rest.
-        cols = low_batteries_df.columns.tolist()
-        new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
-        low_batteries_df = low_batteries_df[new_order]
-        
-        st.data_editor(
-            low_batteries_df,
-            key="low_batteries_editor",
-            use_container_width=True,
-            column_config={
-                "url": st.column_config.LinkColumn(label="Site URL", display_text="Link")
-            },
-            disabled=True
-        )
-    else:
-        st.success("All batteries above 10%.")
-
-    with st.expander("🔋 Full Battery List (Sorted by SOC, Hidden by Default)"):
-        all_batteries_df = db.fetch_all_batteries()
-        if all_batteries_df is not None and not all_batteries_df.empty:
-            all_batteries_df = all_batteries_df.merge(
-                site_df[['site_id', 'name', 'url']],
-                on="site_id",
-                how="left"
-            )
-            # Reorder columns: site_id, name, url first, then the rest.
-            cols = all_batteries_df.columns.tolist()
-            new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
-            all_batteries_df = all_batteries_df[new_order]
-            
-            st.data_editor(
-                all_batteries_df,
-                key="all_batteries_editor",
-                use_container_width=True,
-                column_config={
-                    "url": st.column_config.LinkColumn(label="Site URL", display_text="Link")
-                },
-                disabled=True
-            )
-        else:
-            st.success("No battery data available.")
+    display_battery_section()
 
     st.header("🌍 Site Map with Production Data")
 
@@ -493,7 +488,6 @@ if authentication_status == True:
 
     production_set = db.get_production_set(selected_date)
     df_prod = pd.DataFrame([asdict(record) for record in production_set])
-
 
     if not df_prod.empty and 'latitude' in site_df.columns:
         

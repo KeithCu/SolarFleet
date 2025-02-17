@@ -1,0 +1,9 @@
+aiohttp
+async_timeout
+diskcache
+pandas
+pgeocode
+PyYAML
+scikit_learn
+streamlit_authenticator
+streamlit_folium

@@ -79,8 +79,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         for site in sites:
             raw_site_id = site.get('siteId')
             inverters = cls.get_inverters(raw_site_id)
+            #Skip sites with no inverters
             if inverters == []:
-                print (f"Skipping site {raw_site_id} as it has no inverters.")
                 continue
             site_url = SOLAREDGE_SITE_URL + str(raw_site_id)
             site_id = cls.add_vendorcodeprefix(raw_site_id)
@@ -228,8 +228,17 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             response.raise_for_status()
             alerts = response.json()
             for alert in alerts:
+                # Filter out unwanted alert types
+                if alert.get('type') == 'SNOW_ON_SITE':
+                    continue
+
                 site_id = cls.add_vendorcodeprefix(alert.get('siteId'))
-                alert_details = ''  # FIXME
+
+                alert_type = cls.convert_alert_to_standard(alert.get('type'))
+                alert_details = ''
+                if alert_type == SolarPlatform.AlertType.CONFIG_ERROR:
+                    alert_details = alert.get('type')
+
                 first_triggered_str = alert.get('firstTrigger')
                 # If the timestamp ends with a 'Z', replace it with '+00:00' for proper parsing
                 if first_triggered_str and first_triggered_str.endswith("Z"):
@@ -238,11 +247,6 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                 else:
                     first_triggered = first_triggered_str
 
-                # Filter out unwanted alert types
-                if alert.get('type') == 'SNOW_ON_SITE':
-                    continue
-
-                alert_type = cls.convert_alert_to_standard(alert.get('type'))
                 solarAlert = SolarPlatform.SolarAlert(site_id, alert_type, alert.get('impact'), alert_details, first_triggered)
                 all_alerts.append(solarAlert)
 

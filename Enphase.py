@@ -284,6 +284,8 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
                 site_id = cls.add_vendorcodeprefix(raw_system_id)
                 alert_type = cls.convert_alert_to_standard(status)
                 details = ""
+                if alert_type == SolarPlatform.AlertType.CONFIG_ERROR:
+                    details = status
                 severity = 50  # FIXME Adjust severity
                  # FIXME Look for this data, at least for comms errors.
                 first_triggered = datetime.utcnow()
