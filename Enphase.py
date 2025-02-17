@@ -37,7 +37,7 @@ def fetch_enphase_keys():
 
 import api_keys
 
-#Enphase Installer API has 300 requests per minute, so add a small amount of sleeps to the API to prevent errors
+#Enphase Installer API has 300 requests per minute, so add a small amount of sleeps to the API to prevent errors.
 #200 ms is probably overkill, since each request usually takes 1 second, but it is friendly to have some pauses.
 ENPHASE_SLEEP = 0.2
 
@@ -62,20 +62,15 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
     @classmethod
     def authenticate_enphase(cls, username, password, refresh_token=None):
         url = f"{ENPHASE_BASE_URL}/oauth/token"
+
         if refresh_token:
-            data = {
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token
-            }
+            data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
         else:
-            data = {
-                "grant_type": "password",
-                "username": username,
-                "password": password
-            }
-        headers = EnphasePlatform.get_basic_auth_header(
-            ENPHASE_KEYS.client_id, ENPHASE_KEYS.client_secret)
+            data = {"grant_type": "password", "username": username, "password": password}
+
+        headers = EnphasePlatform.get_basic_auth_header(ENPHASE_KEYS.client_id, ENPHASE_KEYS.client_secret)
         try:
+            cls.log("Trying to Authenticate with Enphase API.")
             response = requests.post(url, data=data, headers=headers)
             response.raise_for_status()
             tokens = response.json()
@@ -93,7 +88,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             stored_access_token, stored_refresh_token, expires_at = tokens
             if current_time < expires_at:
                 return stored_access_token
-        # Try to authenticate
+            
         access_token, new_refresh_token, expires_in = cls.authenticate_enphase(ENPHASE_KEYS.user_email, ENPHASE_KEYS.user_password)
         if access_token:
             expires_at = current_time + expires_in
@@ -106,7 +101,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
 
     #We use this to check for alerts, so cache for a short period of time.
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_DAY)
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
     def get_sites_list(cls) -> list:
         access_token = cls.get_access_token()
         if not access_token:
@@ -120,6 +115,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             url = f"{ENPHASE_BASE_URL}/api/v4/systems?key={ENPHASE_KEYS.api_key}&size={size}&page={page}"
             headers = {"Authorization": f"Bearer {access_token}"}
             try:
+                cls.log(f"Fetching sites from Enphase API, page: {page}.")
                 response = requests.get(url, headers=headers)
                 response.raise_for_status()
                 raw_data = response.json()
@@ -224,7 +220,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
         headers = {"Authorization": f"Bearer {access_token}"}
         try:
             time.sleep(ENPHASE_SLEEP)
-            cls.log(f"Fetching battery telemetry for system {raw_system_id}, battery {serial_number}.")
+            cls.log(f"Fetching battery telemetry for Enphase system {raw_system_id}, battery {serial_number}.")
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             json = response.json()
@@ -292,4 +288,3 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
                 alert = SolarPlatform.SolarAlert(site_id, alert_type, severity, details, first_triggered)
                 alerts.append(alert)
         return alerts
-   

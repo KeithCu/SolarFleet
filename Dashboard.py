@@ -20,40 +20,6 @@ from FleetCollector import collect_platform, run_collection
 from SolarEdge import SolarEdgePlatform
 from Enphase import EnphasePlatform
 
-# to do:
-
-#     dedicated logging library
-
-# 4. Bulk Operations
-#     Bulk Insert/Update for Production Data: 
-#         session.bulk_save_objects(new_production_records)
-#         session.commit()
-# 5. Data Consistency and Sanity Checks
-
-#     Sanity Checks in process_bulk_solar_production: 
-#         Re-enable the commented-out sanity check to ensure you're not storing production data on cloudy days unless explicitly recalibrating:
-
-
-# 6. Database Design
-
-#     Materialized View for Historical Data: 
-#         If you often summarize daily production, consider a materialized view for this purpose:
-
-#         sql
-
-#         CREATE MATERIALIZED VIEW daily_production_summary AS
-#         SELECT production_day, SUM(total_noon_kw) as total_production
-#         FROM productionhistory
-#         GROUP BY production_day;
-
-
-# 7. Error Handling and Logging
-
-#     Improve error handling in database operations. 
-# Use try-except blocks with specific exceptions where appropriate to handle and log errors more gracefully. 
-# # Helper Functions
-
-
 def send_browser_notification(title, message):
     js_code = f"""
     if ("Notification" in window) {{
@@ -78,6 +44,7 @@ def format_production_tooltip(production_kw):
         return f"{production_kw:.2f}"
 
 
+# Return low production if any inverter is producing less than 100 watts
 
 def has_low_production(production):
     if isinstance(production, list):
@@ -343,8 +310,46 @@ def display_battery_section():
             )
 
 
+def load_credentials():
+    with open('./credentials.yaml') as file:
+        credentials = yaml.load(file, Loader=SafeLoader) or {'credentials': {'usernames': {}}}
+        return credentials
+
+def save_credentials(credentials):
+    with open('./credentials.yaml', 'w') as file:
+        yaml.dump(credentials, file)
+
+def add_user(user_name, hashed_password, email):
+    credentials = load_credentials()
+    if 'credentials' not in credentials:
+        credentials = {'credentials': {'usernames': {}}}
+    if 'usernames' not in credentials['credentials']:
+        credentials['credentials']['usernames'] = {}
+
+    if user_name in credentials['credentials']['usernames']:
+        st.error(f"Username '{user_name}' already exists. Please choose a different username.")
+        return False
+
+    credentials['credentials']['usernames'][user_name] = {
+        'name': user_name, # You can store name separately if needed, otherwise username is name
+        'password': hashed_password,
+        'email': email
+    }
+    save_credentials(credentials)
+    return True
+
+def delete_user(user_name):
+    credentials = load_credentials()
+    if 'credentials' in credentials and 'usernames' in credentials['credentials'] and user_name in credentials['credentials']['usernames']:
+        del credentials['credentials']['usernames'][user_name]
+        save_credentials(credentials)
+        return True
+    else:
+        st.error(f"User '{user_name}' not found.")
+        return False
+
 #    
-# Main Streamlit UI starts here
+# Main Streamlit code/UI starts here
 #
 
 title = "☀️ Absolute Solar Monitoring"
@@ -409,35 +414,61 @@ if authentication_status == True:
 
     platform.log("Starting application at " + str(datetime.now()))
 
-    # Create columns
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    with st.expander("Create New User"):
+        user_name = st.text_input("User Name")
+        hashed_password = st.text_input("Hashed Password", type="default")
+        email = st.text_input("Email Address", type="default")
 
-    # Place buttons in columns
-    with col1:
-        if st.button("Run Data Collection"):
-            run_collection()
-            st.success("Collection complete!")
-    with col2:
-        if st.button("Delete Alerts (Test)"):
-            db.delete_all_alerts()
-            st.success("All alerts deleted!")
-    with col3:
-        if st.button("Delete Alerts API Cache (Test)"):
-            alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
-            for key in alerts_cache_keys:
-                del SolarPlatform.cache[key]
-            st.success("Alerts cache cleared!")
-    with col4:
-        if st.button("Delete Battery data (Test)"):
-            db.delete_all_batteries()
-            st.success("Battery data cleared!")
-    with col5:
-        if st.button("convert api_keys to keyring"):
-            SolarPlatform.set_keyring_from_api_keys()
-    with col6:
-        if st.button("Clear Logs"):
-            SolarPlatform.cache.delete("global_logs")
+        if st.button("Create User"):
+            add_user(user_name, hashed_password, email)
+            st.success(f"User '{user_name}' created successfully!")
+            st.write(f"Email: {email}")
+            st.write(f"Hashed Password: {hashed_password}")
 
+    with st.expander("Delete User"):
+        credentials_data = load_credentials()
+        usernames = list(credentials_data['credentials']['usernames'].keys()) if 'credentials' in credentials_data and 'usernames' in credentials_data['credentials'] else []
+        user_to_delete = st.selectbox("Select User to Delete", options=usernames)
+
+        if st.button("Delete User"):
+            if user_to_delete:
+                if delete_user(user_to_delete):
+                    st.success(f"User '{user_to_delete}' deleted successfully!")
+            else:
+                st.warning("No users available to delete or no user selected.")
+
+    with st.expander("Configuration Settings"):
+
+        # Create columns
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+        # Place buttons in columns
+        with col1:
+            if st.button("Run Data Collection"):
+                run_collection()
+                st.success("Collection complete!")
+        with col2:
+            if st.button("Delete Alerts (Test)"):
+                db.delete_all_alerts()
+                st.success("All alerts deleted!")
+        with col3:
+            if st.button("Delete Alerts API Cache (Test)"):
+                alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
+                for key in alerts_cache_keys:
+                    del SolarPlatform.cache[key]
+                st.success("Alerts cache cleared!")
+        with col4:
+            if st.button("Delete Battery data (Test)"):
+                db.delete_all_batteries()
+                st.success("Battery data cleared!")
+        with col5:
+            if st.button("convert api_keys to keyring"):
+                SolarPlatform.set_keyring_from_api_keys()
+        with col6:
+            if st.button("Clear Logs"):
+                SolarPlatform.cache.delete("global_logs")
+                st.success("Battery data cleared!")
+    
     st.markdown("---")
 
     production_set = db.get_production_set(recent_noon)

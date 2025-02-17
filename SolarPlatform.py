@@ -79,9 +79,7 @@ class ProductionRecord:
                     raise TypeError("production_kw list must contain only floats")
 
     def __setstate__(self, state):
-        # Update the instance's __dict__ with the state
         object.__setattr__(self, '__dict__', state)
-        # Call __post_init__ to ensure production_kw is properly set
         self.__post_init__()
 
     def __hash__(self):
@@ -161,7 +159,6 @@ CACHE_EXPIRE_WEEK = CACHE_EXPIRE_DAY * 7
 CACHE_EXPIRE_YEAR = CACHE_EXPIRE_DAY * 365
 
 # Scatter monthly requests over a period of 10 days to avoid cache stampede.
-
 
 def CACHE_EXPIRE_MONTH():
     base = CACHE_EXPIRE_WEEK * 4
