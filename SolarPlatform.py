@@ -249,3 +249,33 @@ def set_keyring_from_api_keys():
 
 # If you want to display fake data for screenshots
 FAKE_DATA = False
+
+def generate_fake_address():
+    # Generate a random 4-digit number
+    number = random.randint(1000, 9999)
+    
+    # List of common street names
+    street_names = ["Main", "Oak", "Maple", "Pine", "Cedar", "Elm", "Willow", "Birch", "Ash", "Cherry"]
+    # Choose a random street name
+    street = random.choice(street_names)
+    
+    # List of common street types
+    street_types = ["St", "Ave", "Rd", "Blvd", "Ln", "Dr", "Ct"]
+    # Choose a random street type
+    street_type = random.choice(street_types)
+    
+    # Combine the elements to create a fake address
+    return f"{number} {street} {street_type}"
+
+
+def generate_fake_site_id():
+    # List of allowed prefixes
+    prefixes = ["SE", "EN", "SA", "SMA", "SO"]
+    # Choose a random prefix
+    prefix = random.choice(prefixes)
+    
+    # Generate a random 7-digit number
+    number = random.randint(1000000, 9999999)
+    
+    # Combine the prefix and number
+    return f"{prefix}:{number}"

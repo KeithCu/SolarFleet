@@ -45,7 +45,6 @@ def format_production_tooltip(production_kw):
 
 
 # Return low production if any inverter is producing less than 100 watts
-
 def has_low_production(production):
     if isinstance(production, list):
         for production in production:
@@ -204,7 +203,11 @@ def create_alert_section(site_df, alerts_df):
 
     #Reorder columns
     alerts_df = alerts_df[['site_id', 'name', 'url'] + [col for col in alerts_df.columns if col not in ['site_id', 'name', 'url']]]
-        
+
+    if SolarPlatform.FAKE_DATA:
+        alerts_df["site_id"] = alerts_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_site_id())        
+        alerts_df["name"] = alerts_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_address())
+ 
     # Merge site history once for all alerts
     merged_alerts_df = alerts_df.merge(
         sites_history_df, on="site_id", how="left")
@@ -269,6 +272,10 @@ def display_battery_section():
             on="site_id",
             how="left"
         )
+        if SolarPlatform.FAKE_DATA:
+            low_batteries_df["site_id"] = low_batteries_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_site_id())
+            low_batteries_df["name"] = low_batteries_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_address())
+
         # Reorder columns: site_id, name, url first, then the rest.
         cols = low_batteries_df.columns.tolist()
         new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
@@ -294,6 +301,11 @@ def display_battery_section():
                 on="site_id",
                 how="left"
             )
+
+            if SolarPlatform.FAKE_DATA:
+                low_batteries_df["site_id"] = low_batteries_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_site_id())
+                low_batteries_df["name"] = low_batteries_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_address())
+
             # Reorder columns: site_id, name, url first, then the rest.
             cols = all_batteries_df.columns.tolist()
             new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
@@ -360,8 +372,7 @@ st.title(title)
 with open('./config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
-with open('./credentials.yaml') as file:
-    credentials = yaml.load(file, Loader=SafeLoader)    
+credentials = load_credentials()
 
 authenticator = stauth.Authenticate(
     credentials['credentials'],
@@ -399,8 +410,7 @@ if authentication_status == True:
 
     sites.update(sites_enphase)
 
-    num_sites = len(sites)
-    st.metric("Sites In Fleet", num_sites)
+    st.metric("Sites In Fleet", len(sites))
 
     st.header("📊 Historical Production Data")
     historical_df = db.get_total_noon_kw()
@@ -476,7 +486,6 @@ if authentication_status == True:
     st.header("🚨 Active Alerts")
 
     alerts_df = db.fetch_alerts()
-    alerts_df = alerts_df.drop(columns=["name", "url"], errors="ignore")
 
     # Generate synthetic alerts for sites with production below 0.1 kW
     existing_alert_sites = set(alerts_df['site_id'].unique())
@@ -521,16 +530,19 @@ if authentication_status == True:
     df_prod = pd.DataFrame([asdict(record) for record in production_set])
 
     if not df_prod.empty and 'latitude' in site_df.columns:
-        
         site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
         site_df = site_df.merge(df_prod, on="site_id", how="left")
 
         site_df['production_kw_total'] = site_df['production_kw'].apply(SolarPlatform.calculate_production_kw)
         site_df['production_kw'] = site_df['production_kw'].round(2)
 
-
         create_map_view(site_df)
-        st.markdown("---")    
+        st.markdown("---")
+
+        if SolarPlatform.FAKE_DATA:
+            site_df["site_id"] = site_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_site_id())        
+            site_df["name"] = site_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_address())
+
         display_production_chart(site_df)
 
     else:

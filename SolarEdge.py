@@ -86,9 +86,6 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             site_id = cls.add_vendorcodeprefix(raw_site_id)
             zipcode = site['location']['zip']
             name = site.get('name')
-            if SolarPlatform.FAKE_DATA:
-                name = str(random.randint(1000, 9999)) + " Main St"
-
             latitude, longitude = SolarPlatform.get_coordinates(zipcode)
             site_info = SolarPlatform.SiteInfo(site_id, name, site_url, zipcode, latitude, longitude)
             sites_dict[site_id] = site_info

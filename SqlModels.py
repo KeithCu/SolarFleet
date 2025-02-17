@@ -11,41 +11,12 @@ SessionLocal = sessionmaker(bind=engine)
 #
 # # Define tables
 
-# from sqlalchemy import Index
-
-# # For Alerts Table
-# Index('idx_alerts_first_triggered', Alert.first_triggered)
-# Index('idx_alerts_type', Alert.alert_type)
-
-# # For ProductionHistory Table
-# Index('idx_productionhistory_day', ProductionHistory.production_day)
-
-# class Alert(Base):
-#     __tablename__ = "alerts"
-#     # ... existing columns ...
-#     __table_args__ = (
-#         Index('idx_alerts_first_triggered', 'first_triggered'),
-#         Index('idx_alerts_type', 'alert_type'),
-#     )
-
-# class ProductionHistory(Base):
-#     __tablename__ = "productionhistory"
-#     # ... existing columns ...
-#     __table_args__ = (
-#         Index('idx_productionhistory_day', 'production_day'),
-#     )
-
 
 class Site(Base):
     __tablename__ = "sites"
     site_id = Column(String, nullable=False)
-    name = Column(String, nullable=False)
-    url = Column(String, nullable=False)
 
     history = Column(String, default="")  # Track alert history
-
-    nearest_site_id = Column(String, nullable=False)
-    nearest_distance = Column(String, nullable=False)
 
     __table_args__ = (
         PrimaryKeyConstraint('site_id'),
@@ -55,8 +26,6 @@ class Site(Base):
 class Alert(Base):
     __tablename__ = "alerts"
     site_id = Column(String, nullable=False)
-    name = Column(String, nullable=False)
-    url = Column(String, nullable=False)
 
     alert_type = Column(String, nullable=False)
     details = Column(String, nullable=False)

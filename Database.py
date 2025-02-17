@@ -11,7 +11,7 @@ import SqlModels as Sql
 import SolarPlatform
 
 
-def add_site_if_not_exists(site_id, name, url, nearest_site_id, nearest_distance):
+def add_site_if_not_exists(site_id):
     session = Sql.SessionLocal()
 
     existing_site = session.query(Sql.Site).filter_by(site_id=site_id).first()
@@ -22,11 +22,7 @@ def add_site_if_not_exists(site_id, name, url, nearest_site_id, nearest_distance
 
     new_site = Sql.Site(
         site_id=site_id,
-        name=name,
-        url=url,
         history="Notes: ",
-        nearest_site_id=nearest_site_id,
-        nearest_distance=nearest_distance
     )
     session.add(new_site)
     session.commit()
@@ -57,7 +53,7 @@ def update_site_history(site_id, new_history):
         session.close()
 
 
-def add_alert_if_not_exists(site_id, name, url, alert_type, details, severity, first_triggered):
+def add_alert_if_not_exists(site_id, alert_type, details, severity, first_triggered):
     with Sql.SessionLocal() as session:
         existing_alert = session.query(Sql.Alert).filter(
             Sql.Alert.site_id == site_id,
@@ -71,8 +67,6 @@ def add_alert_if_not_exists(site_id, name, url, alert_type, details, severity, f
 
             new_alert = Sql.Alert(
                 site_id=site_id,
-                name=name,
-                url=url,
                 alert_type=str(alert_type),
                 details=details,
                 severity=severity,
