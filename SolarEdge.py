@@ -123,7 +123,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     def get_batteries(cls, raw_site_id):
         devices = cls.get_devices(raw_site_id)
 
-        batteries = [device for device in devices if device.get('type') == 'BATTERY']
+        batteries = [device for device in devices if device.get('type') == 'BATTERY'  and device.get('active') == True]
         return batteries
 
 

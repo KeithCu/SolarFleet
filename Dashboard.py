@@ -407,7 +407,7 @@ if authentication_status == True:
     display_historical_chart(historical_df)
 
     valid_production_dates = db.get_valid_production_dates()
-    recent_noon = SolarPlatform.get_recent_noon().date()
+    recent_noon = valid_production_dates[-1]
 
     with st.expander("Show Logs", expanded=False):
         st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
@@ -437,34 +437,33 @@ if authentication_status == True:
             else:
                 st.warning("No users available to delete or no user selected.")
 
+    if st.button("Run Data Collection"):
+        run_collection()
+        st.success("Collection complete!")
+
     with st.expander("Configuration Settings"):
 
         # Create columns
-        col1, col2, col3, col4, col5, col6 = st.columns(6)
+        col1, col2, col3, col4, col5 = st.columns(5)
 
-        # Place buttons in columns
         with col1:
-            if st.button("Run Data Collection"):
-                run_collection()
-                st.success("Collection complete!")
-        with col2:
             if st.button("Delete Alerts (Test)"):
                 db.delete_all_alerts()
                 st.success("All alerts deleted!")
-        with col3:
+        with col2:
             if st.button("Delete Alerts API Cache (Test)"):
                 alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
                 for key in alerts_cache_keys:
                     del SolarPlatform.cache[key]
                 st.success("Alerts cache cleared!")
-        with col4:
+        with col3:
             if st.button("Delete Battery data (Test)"):
                 db.delete_all_batteries()
                 st.success("Battery data cleared!")
-        with col5:
+        with col4:
             if st.button("convert api_keys to keyring"):
                 SolarPlatform.set_keyring_from_api_keys()
-        with col6:
+        with col5:
             if st.button("Clear Logs"):
                 SolarPlatform.cache.delete("global_logs")
                 st.success("Battery data cleared!")
