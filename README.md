@@ -1,6 +1,7 @@
 # ☀️ Solar Fleet Monitoring Dashboard
 
-![Dashboard Screenshot](https://github.com/user-attachments/assets/22b17fd1-0431-4813-90ca-c010ec9318f9)
+![FleetDashboard](https://github.com/user-attachments/assets/9cd8b546-a1ac-40bc-9e69-2453b381103d)
+
 
 A **real-time solar fleet monitoring** dashboard built with **Streamlit**, integrating multiple solar APIs, intelligent caching, and even web scraping for systems without official API support.
 
