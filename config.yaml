@@ -1,8 +1,0 @@
-credentials:
-  usernames: keith, pete
-cookie:
-  name: streamlit_auth_cookie
-  key: SGDSASDF223424fsdfdf234465465 # Change this to a strong, random key
-  expiry_days: 60
-preauthorized:
-  emails: []
