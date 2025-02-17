@@ -414,6 +414,10 @@ if authentication_status == True:
 
     platform.log("Starting application at " + str(datetime.now()))
 
+    if st.button("Run Fleet Data Collection"):
+        run_collection()
+        st.success("Collection complete!")
+
     with st.expander("Create New User"):
         user_name = st.text_input("User Name")
         hashed_password = st.text_input("Hashed Password", type="default")
@@ -436,10 +440,6 @@ if authentication_status == True:
                     st.success(f"User '{user_to_delete}' deleted successfully!")
             else:
                 st.warning("No users available to delete or no user selected.")
-
-    if st.button("Run Data Collection"):
-        run_collection()
-        st.success("Collection complete!")
 
     with st.expander("Configuration Settings"):
 
