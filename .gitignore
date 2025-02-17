@@ -1,0 +1,9 @@
+api_keys.py
+*.pyc
+solar_alerts.db
+cache.db
+cache.db-shm
+cache.db-wal
+credentials.yaml
+
+

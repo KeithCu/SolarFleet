@@ -2,3 +2,7 @@
     Order Allow,Deny
     Deny from all
 </Files>
+<Files "credentials.yaml">
+    Order Allow,Deny
+    Deny from all
+</Files>

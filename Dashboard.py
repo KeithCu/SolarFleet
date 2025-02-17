@@ -409,14 +409,14 @@ if authentication_status == True:
     valid_production_dates = db.get_valid_production_dates()
     recent_noon = valid_production_dates[-1]
 
-    with st.expander("Show Logs", expanded=False):
-        st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
-
     platform.log("Starting application at " + str(datetime.now()))
 
     if st.button("Run Fleet Data Collection"):
         run_collection()
         st.success("Collection complete!")
+
+    with st.expander("Show Logs", expanded=False):
+        st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
 
     with st.expander("Create New User"):
         user_name = st.text_input("User Name")
