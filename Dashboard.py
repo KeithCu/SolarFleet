@@ -288,6 +288,7 @@ def create_alert_section(site_df, alerts_df):
         column_config={
             "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
         },
+        drop_columns=["alert_type"],
         alert_type=None
     )
 
