@@ -18,6 +18,17 @@ import api_keys
 # Disk cache decorator to save remote API calls.
 cache = diskcache.Cache(".")
 
+DEFAULT_TIMEZONE = "US/Eastern"
+
+SELECT_TIMEZONES = [
+    'US/Eastern',
+    'US/Central',
+    'US/Mountain',
+    'US/Pacific',
+    'Europe/London',
+    'Europe/Berlin',
+    'Asia/Tokyo'
+]
 
 @dataclass(frozen=True)
 class BatteryInfo:

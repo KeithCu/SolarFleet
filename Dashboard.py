@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 from datetime import date
 from dataclasses import asdict
+from zoneinfo import ZoneInfo
+import zoneinfo
 import numpy as np
 import pandas as pd
 import folium
@@ -128,7 +130,11 @@ def create_map_view(sites_df):
     st_folium(m, width=1200)
 
 
-def display_historical_chart(historical_df):
+def display_historical_chart():
+    historical_df = db.get_total_noon_kw()
+
+    historical_df['production_day'] = pd.to_datetime(historical_df['production_day'])
+    historical_df['production_day'] = historical_df['production_day'].dt.normalize() + pd.Timedelta('12H') # Set time to noon
 
     chart = alt.Chart(historical_df).mark_line(size=5).encode(
         x=alt.X('production_day:T', title='Date'),
@@ -410,11 +416,77 @@ if authentication_status == True:
 
     sites.update(sites_enphase)
 
-    st.metric("Sites In Fleet", len(sites))
+    tab1, tab2 = st.tabs(["Content ", "Settings"])
+    with tab1:
+        st.metric("Active Sites In Fleet", len(sites))
+
+    with tab2:
+        all_timezones = sorted(SolarPlatform.SELECT_TIMEZONES)
+        current_timezone = SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE)      
+        with st.expander("Time Zone Configuration", expanded=True):
+            selected_timezone_str = st.selectbox(
+                "Select Time Zone",
+                options=all_timezones,
+                index=all_timezones.index(current_timezone) if current_timezone in all_timezones else 0 # Default to first if default_timezone not found
+            )
+            SolarPlatform.cache.add("TimeZone", selected_timezone_str)
+
+        with st.expander("Show Logs", expanded=False):
+            st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
+
+        with st.expander("Create New User"):
+            user_name = st.text_input("User Name")
+            hashed_password = st.text_input("Hashed Password", type="default")
+            email = st.text_input("Email Address", type="default")
+
+            if st.button("Create User"):
+                add_user(user_name, hashed_password, email)
+                st.success(f"User '{user_name}' created successfully!")
+                st.write(f"Email: {email}")
+                st.write(f"Hashed Password: {hashed_password}")
+
+        with st.expander("Delete User"):
+            credentials_data = load_credentials()
+            usernames = list(credentials_data['credentials']['usernames'].keys()) if 'credentials' in credentials_data and 'usernames' in credentials_data['credentials'] else []
+            user_to_delete = st.selectbox("Select User to Delete", options=usernames)
+
+            if st.button("Delete User"):
+                if user_to_delete:
+                    if delete_user(user_to_delete):
+                        st.success(f"User '{user_to_delete}' deleted successfully!")
+                else:
+                    st.warning("No users available to delete or no user selected.")
+
+        with st.expander("Configuration Settings"):
+
+            # Create columns
+            col1, col2, col3, col4, col5 = st.columns(5)
+
+            with col1:
+                if st.button("Delete Alerts (Test)"):
+                    db.delete_all_alerts()
+                    st.success("All alerts deleted!")
+            with col2:
+                if st.button("Delete Alerts API Cache (Test)"):
+                    alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
+                    for key in alerts_cache_keys:
+                        del SolarPlatform.cache[key]
+                    st.success("Alerts cache cleared!")
+            with col3:
+                if st.button("Delete Battery data (Test)"):
+                    db.delete_all_batteries()
+                    st.success("Battery data cleared!")
+            with col4:
+                if st.button("convert api_keys to keyring"):
+                    SolarPlatform.set_keyring_from_api_keys()
+            with col5:
+                if st.button("Clear Logs"):
+                    SolarPlatform.cache.delete("global_logs")
+                    st.success("Battery data cleared!")
+
 
     st.header("📊 Historical Production Data")
-    historical_df = db.get_total_noon_kw()
-    display_historical_chart(historical_df)
+    display_historical_chart()
 
     valid_production_dates = db.get_valid_production_dates()
     recent_noon = valid_production_dates[-1]
@@ -425,58 +497,6 @@ if authentication_status == True:
         run_collection()
         st.success("Collection complete!")
 
-    with st.expander("Show Logs", expanded=False):
-        st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
-
-    with st.expander("Create New User"):
-        user_name = st.text_input("User Name")
-        hashed_password = st.text_input("Hashed Password", type="default")
-        email = st.text_input("Email Address", type="default")
-
-        if st.button("Create User"):
-            add_user(user_name, hashed_password, email)
-            st.success(f"User '{user_name}' created successfully!")
-            st.write(f"Email: {email}")
-            st.write(f"Hashed Password: {hashed_password}")
-
-    with st.expander("Delete User"):
-        credentials_data = load_credentials()
-        usernames = list(credentials_data['credentials']['usernames'].keys()) if 'credentials' in credentials_data and 'usernames' in credentials_data['credentials'] else []
-        user_to_delete = st.selectbox("Select User to Delete", options=usernames)
-
-        if st.button("Delete User"):
-            if user_to_delete:
-                if delete_user(user_to_delete):
-                    st.success(f"User '{user_to_delete}' deleted successfully!")
-            else:
-                st.warning("No users available to delete or no user selected.")
-
-    with st.expander("Configuration Settings"):
-
-        # Create columns
-        col1, col2, col3, col4, col5 = st.columns(5)
-
-        with col1:
-            if st.button("Delete Alerts (Test)"):
-                db.delete_all_alerts()
-                st.success("All alerts deleted!")
-        with col2:
-            if st.button("Delete Alerts API Cache (Test)"):
-                alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
-                for key in alerts_cache_keys:
-                    del SolarPlatform.cache[key]
-                st.success("Alerts cache cleared!")
-        with col3:
-            if st.button("Delete Battery data (Test)"):
-                db.delete_all_batteries()
-                st.success("Battery data cleared!")
-        with col4:
-            if st.button("convert api_keys to keyring"):
-                SolarPlatform.set_keyring_from_api_keys()
-        with col5:
-            if st.button("Clear Logs"):
-                SolarPlatform.cache.delete("global_logs")
-                st.success("Battery data cleared!")
     
     st.markdown("---")
 
