@@ -28,7 +28,7 @@ def collect_platform(platform):
         for site_id in sites.keys():
             site = sites[site_id]
             # This needs to be moved to later when we have the nearest site information
-            db.add_site_if_not_exists(site_id, sites[site_id].name, site.url, "nearest_siteid", "nearest_distance")
+            db.add_site_if_not_exists(site_id)
 
             battery_data = platform.get_batteries_soe(site_id)
             for battery in battery_data:
