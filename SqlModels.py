@@ -55,7 +55,7 @@ class Battery(Base):
     model_number = Column(String, nullable=False)
     state_of_energy = Column(Float, nullable=True)
 
-    last_updated = Column(DateTime, default=datetime.utcnow)
+    last_updated = Column(DateTime, nullable = False)
 
     __table_args__ = (
         PrimaryKeyConstraint('site_id', 'serial_number'),

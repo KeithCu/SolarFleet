@@ -127,8 +127,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
     def get_battery_state_of_energy(cls, raw_site_id, serial_number):
-        end_time = datetime.utcnow()
-        start_time = datetime.utcnow() - timedelta(minutes=15)
+        end_time = SolarPlatform.get_now()
+        start_time = end_time - timedelta(minutes=15)
 
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/storage/{serial_number}/state-of-energy'
         params = {'from': start_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
@@ -172,7 +172,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         params = {'from': formatted_begin_time , 'to': formatted_end_time,
                   'resolution': 'QUARTER_HOUR', 'unit': 'KW'}
 
-        cls.log(f"Fetching production from SolarEdge API for site: {raw_site_id} inverter: {inverter_id} at {reference_time}.")
+        cls.log(f"Fetching production from SolarEdge API for site: {raw_site_id} inverter: {inverter_id} at {formatted_begin_time}.")
         time.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()

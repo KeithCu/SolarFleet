@@ -3,6 +3,8 @@ import json
 from datetime import datetime
 from zoneinfo import ZoneInfo  # Requires Python 3.9+
 
+import SolarPlatform
+
 # Configuration – update these values accordingly
 energy_api_username = "your@email.com"
 energy_api_password = "top_secret_password"
@@ -38,7 +40,7 @@ access_token = data.get("access_token")
 print("Access Token:", access_token)
 
 # Step 2: Get the current date in America/New_York timezone
-current_datetime = datetime.now(ZoneInfo("America/New_York"))
+current_datetime = SolarPlatform.get_now()
 current_date = current_datetime.strftime("%Y-%m-%d")
 print("Current Date:", current_date)
 

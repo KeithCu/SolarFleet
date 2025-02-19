@@ -54,6 +54,8 @@ def update_site_history(site_id, new_history):
 
 
 def add_alert_if_not_exists(site_id, alert_type, details, severity, first_triggered):
+    now = SolarPlatform.get_now()
+
     with Sql.SessionLocal() as session:
         existing_alert = session.query(Sql.Alert).filter(
             Sql.Alert.site_id == site_id,
@@ -63,7 +65,6 @@ def add_alert_if_not_exists(site_id, alert_type, details, severity, first_trigge
         ).first()
 
         if not existing_alert:
-            now = datetime.utcnow()
 
             new_alert = Sql.Alert(
                 site_id=site_id,
@@ -87,14 +88,14 @@ def update_battery_data(site_id, serial_number, model_number, state_of_energy):
 
     if existing_battery:
         existing_battery.state_of_energy = state_of_energy
-        existing_battery.last_updated = datetime.utcnow()
-    else:
+        existing_battery.last_updated = SolarPlatform.get_now()
+    else: 
         new_battery = Sql.Battery(
-            site_id=site_id,
-            serial_number=serial_number,
-            model_number=model_number,
-            state_of_energy=state_of_energy,
-            last_updated=datetime.utcnow()
+            site_id= site_id,
+            serial_number = serial_number,
+            model_number = model_number,
+            state_of_energy = state_of_energy,
+            last_updated = SolarPlatform.get_now()
         )
         session.add(new_battery)
 

@@ -96,7 +96,7 @@ class SolisCloudPlatform(SolarPlatform.SolarPlatform):
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
     def get_station_day(cls, station_id: int, time_str: str = None, currency: str = "USD", time_zone: int = 0) -> dict:
         if time_str is None:
-            time_str = datetime.utcnow().strftime("%Y-%m-%d")
+            time_str = SolarPlatform.get_now().strftime("%Y-%m-%d")
         params = {"money": currency, "time": time_str, "timeZone": time_zone, "id": station_id}
         return cls._fetch_api_data(STATION_DAY, params)
 
@@ -196,7 +196,7 @@ class SolisCloudPlatform(SolarPlatform.SolarPlatform):
                 if first_triggered_str and first_triggered_str.endswith("Z"):
                     first_triggered = datetime.fromisoformat(first_triggered_str.replace("Z", "+00:00"))
                 else:
-                    first_triggered = datetime.utcnow()
+                    first_triggered = SolarPlatform.get_now()
                 alert_obj = SolarPlatform.SolarAlert(site_id, alert_type, severity, details, first_triggered)
                 alerts.append(alert_obj)
         except Exception as e:

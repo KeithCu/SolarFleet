@@ -1,8 +1,7 @@
 from datetime import datetime, timedelta
 from datetime import date
 from dataclasses import asdict
-from zoneinfo import ZoneInfo
-import zoneinfo
+
 import numpy as np
 import pandas as pd
 import folium
@@ -134,7 +133,7 @@ def display_historical_chart():
     historical_df = db.get_total_noon_kw()
 
     historical_df['production_day'] = pd.to_datetime(historical_df['production_day'])
-    historical_df['production_day'] = historical_df['production_day'].dt.normalize() + pd.Timedelta('12H') # Set time to noon
+    historical_df['production_day'] = historical_df['production_day'].dt.normalize() + pd.Timedelta('12h') # Set time to noon
 
     chart = alt.Chart(historical_df).mark_line(size=5).encode(
         x=alt.X('production_day:T', title='Date'),
@@ -517,7 +516,7 @@ if authentication_status == True:
                 alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
                 severity=100,
                 details="",
-                first_triggered=datetime.utcnow()
+                first_triggered=SolarPlatform.get_now()
             )
             synthetic_alerts.append(synthetic_alert)
 

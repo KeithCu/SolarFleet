@@ -284,7 +284,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
                     details = status
                 severity = 50  # FIXME Adjust severity
                  # FIXME Look for this data, at least for comms errors.
-                first_triggered = datetime.utcnow()
+                first_triggered = SolarPlatform.get_now()
                 alert = SolarPlatform.SolarAlert(site_id, alert_type, severity, details, first_triggered)
                 alerts.append(alert)
         return alerts

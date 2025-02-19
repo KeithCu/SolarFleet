@@ -6,6 +6,8 @@ import streamlit as st
 from typing import List, Dict, Union
 import diskcache
 import pprint
+from zoneinfo import ZoneInfo
+import zoneinfo
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Optional
@@ -111,6 +113,9 @@ def calculate_production_kw(item):
     else:
         return 0.0
 
+def get_now():
+    return datetime.now(ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE)))
+    
 class SolarPlatform(ABC):
     log_container = None # st.empty() A Streamlit container to display log messages
     log_text = ""  # A string to store cumulative log messages
@@ -193,10 +198,8 @@ def disk_cache(expiration_seconds):
     return decorator
 
 
-# FIXME, harding codes Eastern timezone for now
-def get_recent_noon(timezone_str="America/New_York") -> datetime:
-    tz = ZoneInfo(timezone_str)  # Use specified timezone
-    now = datetime.now(tz)
+def get_recent_noon() -> datetime:
+    now = get_now()
     today = now.date()
 
     threshold = datetime.combine(today, time(12, 30), tzinfo=tz)  # Threshold in specified tz
