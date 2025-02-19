@@ -55,8 +55,7 @@ def collect_platform(platform):
     try:
         alerts = platform.get_alerts()
         for alert in alerts:
-            db.add_alert_if_not_exists(alert.site_id, sites[alert.site_id].name, sites[alert.site_id].url, str(
-                alert.alert_type), alert.details, alert.severity, alert.first_triggered)
+            db.add_alert_if_not_exists(alert.site_id, str(alert.alert_type), alert.details, alert.severity, alert.first_triggered)
 
     except Exception as e:
         platform.log(f"Error while fetching alerts: {e}")
