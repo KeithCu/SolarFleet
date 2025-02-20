@@ -200,6 +200,7 @@ def disk_cache(expiration_seconds):
 
 def get_recent_noon() -> datetime:
     now = get_now()
+    tz = ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE))
     today = now.date()
 
     threshold = datetime.combine(today, time(12, 30), tzinfo=tz)  # Threshold in specified tz
