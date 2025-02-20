@@ -115,15 +115,7 @@ def fetch_alerts():
 
 
 def delete_all_alerts():
-    session = Sql.SessionLocal()
-    try:
-        session.query(Sql.Alert).delete()
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        raise e
-    finally:
-        session.close()
+    Sql.Alert.__table__.drop(bind=Sql.engine, checkfirst=True)
 
 
 def fetch_low_batteries():
