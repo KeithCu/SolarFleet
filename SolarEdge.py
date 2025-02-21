@@ -127,7 +127,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 2)
     def get_battery_state_of_energy(cls, raw_site_id, serial_number):
-        end_time = SolarPlatform.get_now()
+        end_time = datetime.utcnow() #Fixme
         start_time = end_time - timedelta(minutes=15)
 
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/storage/{serial_number}/state-of-energy'
