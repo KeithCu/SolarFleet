@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Optional
 import datetime
-from datetime import timedelta
+from datetime import timedelta, datetime, date
 import numpy as np
 import pandas as pd
 from pandas import MultiIndex
@@ -216,8 +216,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         tz = ZoneInfo(SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE))
         
         # Convert dates to 6 AM local start and 23:59:59 local end, then to UTC
-        start_local = datetime.datetime.combine(start_date, datetime.time(6, 0, 0), tzinfo=tz)
-        end_local = datetime.datetime.combine(end_date, datetime.time(23, 59, 59), tzinfo=tz)
+        start_local = datetime.combine(start_date, datetime.time(6, 0, 0), tzinfo=tz)
+        end_local = datetime.combine(end_date, datetime.time(23, 59, 59), tzinfo=tz)
         start_utc = start_local.astimezone(datetime.timezone.utc)
         end_utc = end_local.astimezone(datetime.timezone.utc)
 
@@ -237,17 +237,23 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         full_url = requests.Request('GET', url, headers=SOLAREDGE_HEADERS, params=params).prepare().url
         cls.log(f"Fetching energy from SolarEdge API for site: {raw_site_id} with URL: {full_url}")
         time.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
-        
-        # Make API request
-        response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
-        if response.status_code != 200:
-            cls.log(f"API error {response.status_code}: {response.text}")
-        response.raise_for_status()
-        
-        # Parse and return energy values
-        json_data = response.json()
-        values = json_data.get('values', [])
-        return values
+    
+        # Make API request with retries
+        for attempt in range(3):
+            try:
+                response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
+                response.raise_for_status()
+                # Validate response data before returning to avoid caching bad data
+                json_data = response.json()
+                values = json_data.get('values', [])
+                if not values:
+                    cls.log(f"Empty data returned for site {raw_site_id} from {formatted_start} to {formatted_end}")
+                return values  # Only return if successful and valid
+            except Exception as e:
+                cls.log(f"Attempt {attempt+1} failed for site {raw_site_id}: {e}")
+                if attempt == 2:  # Last attempt
+                    raise  # Rethrow after 3 failures
+                time.sleep(5)  # Wait before retrying
     
 
     @classmethod
@@ -264,38 +270,48 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         
         data = {}
 
-        start_of_year = datetime.date(year, 1, 1)
-        end_of_year = datetime.date(year, 12, 31)
-        interval = datetime.timedelta(days=80)
+        start_of_year = date(year, 1, 1)
+        end_of_year = date(year, 12, 31)
+        interval = timedelta(days=80)
         intervals = []
         current_start = start_of_year
         while current_start <= end_of_year:
-            current_end = min(current_start + interval - datetime.timedelta(days=1), end_of_year)
+            current_end = min(current_start + interval - timedelta(days=1), end_of_year)
             intervals.append((current_start, current_end))
-            current_start = current_end + datetime.timedelta(days=1)
+            current_start = current_end + timedelta(days=1)
     
         for site_id in site_ids:
             raw_site_id = cls.strip_vendorcodeprefix(site_id)
             
-            for start_date, end_date in intervals:
+        error_msg = None
+    
+        for start_date, end_date in intervals:
+            try:
                 energy_data = cls._get_site_energy(raw_site_id, start_date, end_date)
                 if energy_data and (energy_data[0]['timestamp'].split('T')[0] != start_date.strftime('%Y-%m-%d') or energy_data[-1]['timestamp'].split('T')[0] != end_date.strftime('%Y-%m-%d')):
                     cls.log(f"Warning: Data range mismatch for site {raw_site_id}: requested {start_date} to {end_date}, got {energy_data[0]['timestamp']} to {energy_data[-1]['timestamp']}")
+            except Exception as e:
+                error_msg = f"Error for site {raw_site_id} from {start_date} to {end_date}: {str(e)}"
+                cls.log(error_msg)
+                break  # Stop processing this site and move to saving
 
-                if not energy_data:
-                    cls.log(f"No data returned for site {raw_site_id} from {start_date} to {end_date}")
-                else:
-                    cls.log(f"Returned {len(energy_data)} items for site {raw_site_id} from {start_date} to {end_date}")
+            if not energy_data:
+                cls.log(f"No data returned for site {raw_site_id} from {start_date} to {end_date}")
+            else:
+                cls.log(f"Returned {len(energy_data)} items for site {raw_site_id} from {start_date} to {end_date}")
+
+            for item in energy_data:
+                date_str = item['timestamp'].split('T')[0]
+                value = item['value']
+                if date_str not in data:
+                    data[date_str] = {}
+                data[date_str][site_id] = value
     
-                for item in energy_data:
-                    date_str = item['timestamp'].split('T')[0]
-                    value = item['value']
-                    if date_str not in data:
-                        data[date_str] = {}
-                    data[date_str][site_id] = value
-        
-        start_date = datetime.date(year, 1, 1)
-        end_date = datetime.date(year, 12, 31)
+            if error_msg:
+                break  # Stop processing further sites if an error occurred
+
+        start_date = date(year, 1, 1)
+        end_date = date(year, 12, 31)
         dates = pd.date_range(start=start_date, end=end_date, freq='D').strftime('%Y-%m-%d').tolist()
         
         df = pd.DataFrame.from_dict(data, orient='index')        
@@ -307,6 +323,12 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         prefix = cls.get_vendorcode()
         dynamic_file_name = f"{prefix}_production_{year}_{file_suffix}.csv"
 
+        if error_msg:
+            # Add a row with the error message at the end of the DataFrame
+            error_row = pd.Series(index=df.columns, dtype='object')
+            error_row[:] = error_msg
+            f = pd.concat([df, error_row.to_frame().T], ignore_index=False)
+            
         df.to_csv(dynamic_file_name, index_label='Date')
         return dynamic_file_name
 
