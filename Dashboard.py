@@ -413,13 +413,16 @@ if authentication_status == True:
     platform = EnphasePlatform()
     sites_enphase = platform.get_sites_map()
 
+    #depend on solaredge platform for now
+    platform = SolarEdgePlatform()
+
     sites.update(sites_enphase)
 
-    tab1, tab2 = st.tabs(["Content ", "Settings"])
-    with tab1:
+    tabContent, tabSettings, tabProduction, tabUsers = st.tabs(["Content ", "Settings", "Production", "Users"])
+    with tabContent:
         st.metric("Active Sites In Fleet", len(sites))
 
-    with tab2:
+    with tabSettings:
         all_timezones = sorted(SolarPlatform.SELECT_TIMEZONES)
         current_timezone = SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE)      
         with st.expander("Time Zone Configuration", expanded=True):
@@ -433,6 +436,57 @@ if authentication_status == True:
         with st.expander("Show Logs", expanded=False):
             st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
 
+        if st.button("Delete Alerts (Test)"):
+            db.delete_all_alerts()
+            st.success("All alerts deleted!")
+        if st.button("Delete Alerts API Cache (Test)"):
+            alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
+            for key in alerts_cache_keys:
+                del SolarPlatform.cache[key]
+            st.success("Alerts cache cleared!")
+        if st.button("Delete Battery data (Test)"):
+            db.delete_all_batteries()
+            st.success("Battery data cleared!")
+        if st.button("convert api_keys to keyring"):
+            SolarPlatform.set_keyring_from_api_keys()
+        if st.button("Clear Logs"):
+            SolarPlatform.cache.delete("global_logs")
+            st.success("Battery data cleared!")
+
+    #working
+    with tabProduction:
+        # UI elements
+        site_ids_input = st.text_input("Enter site ID or comma-separated site IDs (e.g., SE:3148836, SE:3148837)", "")
+        all_sites = st.checkbox("Select All Sites")
+
+        current_year = pd.Timestamp.now().year
+        years = list(range(current_year - 5, current_year + 1))
+        selected_year = st.selectbox("Select Year", years, index=years.index(current_year - 1))
+
+        # Process the input
+        if all_sites:
+            site_ids = None
+        else:
+            # Parse the input into a list, handling single or multiple site IDs
+            site_ids = [site_id.strip() for site_id in site_ids_input.split(",") if site_id.strip()]
+
+        # Ensure at least one site ID is provided or "All" is selected
+        if not site_ids and not all_sites:
+            st.warning("Please enter at least one site ID or select 'All Sites'.")
+        else:
+            if st.button("Fetch Production Data"):
+                # Call the API to generate production data for the given site IDs
+                file_name = platform.save_site_yearly_production(selected_year, site_ids)
+                st.success("Production data saved successfully.")
+                with open(file_name, "rb") as file:
+                    st.download_button(
+                        label="Download Production Data",
+                        data=file,
+                        file_name=file_name,
+                        mime="text/csv",
+                    )
+
+    with tabUsers:
         with st.expander("Create New User"):
             user_name = st.text_input("User Name")
             hashed_password = st.text_input("Hashed Password", type="default")
@@ -456,32 +510,6 @@ if authentication_status == True:
                 else:
                     st.warning("No users available to delete or no user selected.")
 
-        with st.expander("Configuration Settings"):
-
-            # Create columns
-            col1, col2, col3, col4, col5 = st.columns(5)
-
-            with col1:
-                if st.button("Delete Alerts (Test)"):
-                    db.delete_all_alerts()
-                    st.success("All alerts deleted!")
-            with col2:
-                if st.button("Delete Alerts API Cache (Test)"):
-                    alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
-                    for key in alerts_cache_keys:
-                        del SolarPlatform.cache[key]
-                    st.success("Alerts cache cleared!")
-            with col3:
-                if st.button("Delete Battery data (Test)"):
-                    db.delete_all_batteries()
-                    st.success("Battery data cleared!")
-            with col4:
-                if st.button("convert api_keys to keyring"):
-                    SolarPlatform.set_keyring_from_api_keys()
-            with col5:
-                if st.button("Clear Logs"):
-                    SolarPlatform.cache.delete("global_logs")
-                    st.success("Battery data cleared!")
 
 
     st.header("📊 Historical Production Data")

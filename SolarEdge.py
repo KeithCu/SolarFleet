@@ -1,7 +1,11 @@
 from dataclasses import dataclass
-from typing import List, Dict
-from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from typing import List, Dict, Optional
+import datetime
+from datetime import timedelta
 import numpy as np
+import pandas as pd
+from pandas import MultiIndex
 import requests
 import random
 import streamlit as st
@@ -9,6 +13,7 @@ import keyring
 import time
 import api_keys
 import SolarPlatform
+import csv
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
 SOLAREDGE_SITE_URL = 'https://monitoring.solaredge.com/solaredge-web/p/site/'
@@ -203,6 +208,112 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
         return productions
     
+
+    @classmethod
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
+    def _get_site_energy(cls, raw_site_id, start_date, end_date):
+        """
+        Helper method to fetch site energy data for a specific date range with daily resolution,
+        using local midnight from cached timezone converted to UTC.
+        """
+        # Get local timezone from cache, defaulting to SolarPlatform.DEFAULT_TIMEZONE
+        tz = ZoneInfo(SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE))
+        
+        # Convert dates to 6 AM local start and 23:59:59 local end, then to UTC
+        start_local = datetime.datetime.combine(start_date, datetime.time(6, 0, 0), tzinfo=tz)
+        end_local = datetime.datetime.combine(end_date, datetime.time(23, 59, 59), tzinfo=tz)
+        start_utc = start_local.astimezone(datetime.timezone.utc)
+        end_utc = end_local.astimezone(datetime.timezone.utc)
+
+        # Format as ISO 8601 with seconds precision and Z
+        formatted_start = start_utc.isoformat(timespec='seconds').replace('+00:00', 'Z')
+        formatted_end = end_utc.isoformat(timespec='seconds').replace('+00:00', 'Z')
+        
+        # Construct API URL and parameters
+        url = SOLAREDGE_BASE_URL + f'/sites/{raw_site_id}/energy'
+        params = {
+            'from': formatted_start,
+            'to': formatted_end,
+            'resolution': 'DAY'
+        }
+        
+        # Log the exact URL for debugging
+        full_url = requests.Request('GET', url, headers=SOLAREDGE_HEADERS, params=params).prepare().url
+        cls.log(f"Fetching energy from SolarEdge API for site: {raw_site_id} with URL: {full_url}")
+        time.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
+        
+        # Make API request
+        response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
+        if response.status_code != 200:
+            cls.log(f"API error {response.status_code}: {response.text}")
+        response.raise_for_status()
+        
+        # Parse and return energy values
+        json_data = response.json()
+        values = json_data.get('values', [])
+        return values
+    
+
+    @classmethod
+    def save_site_yearly_production(cls, year: int, site_ids: Optional[List[str]] = None) -> str:
+        sites_map = cls.get_sites_map()
+        if site_ids is None:
+            site_ids = sorted(sites_map.keys())
+            file_suffix = "All_Sites"
+        else:
+            if len(site_ids) <= 5:
+                file_suffix = "_".join([id.split(":")[1] for id in site_ids])
+            else:
+                file_suffix = f"{site_ids[0].split(':')[1]}_et_al"
+        
+        data = {}
+
+        start_of_year = datetime.date(year, 1, 1)
+        end_of_year = datetime.date(year, 12, 31)
+        interval = datetime.timedelta(days=60)
+        intervals = []
+        current_start = start_of_year
+        while current_start <= end_of_year:
+            current_end = min(current_start + interval - datetime.timedelta(days=1), end_of_year)
+            intervals.append((current_start, current_end))
+            current_start = current_end + datetime.timedelta(days=1)
+    
+        for site_id in site_ids:
+            raw_site_id = cls.strip_vendorcodeprefix(site_id)
+            for start_date, end_date in intervals:
+                energy_data = cls._get_site_energy(raw_site_id, start_date, end_date)
+                if energy_data and (energy_data[0]['timestamp'].split('T')[0] != start_date.strftime('%Y-%m-%d') or energy_data[-1]['timestamp'].split('T')[0] != end_date.strftime('%Y-%m-%d')):
+                    cls.log(f"Warning: Data range mismatch for site {raw_site_id}: requested {start_date} to {end_date}, got {energy_data[0]['timestamp']} to {energy_data[-1]['timestamp']}")
+
+                if not energy_data:
+                    cls.log(f"No data returned for site {raw_site_id} from {start_date} to {end_date}")
+                else:
+                    cls.log(f"Returned {len(energy_data)} items for site {raw_site_id} from {start_date} to {end_date}")
+    
+                for item in energy_data:
+                    date_str = item['timestamp'].split('T')[0]
+                    value = item['value']
+                    if date_str not in data:
+                        data[date_str] = {}
+                    data[date_str][site_id] = value
+        
+        start_date = datetime.date(year, 1, 1)
+        end_date = datetime.date(year, 12, 31)
+        dates = pd.date_range(start=start_date, end=end_date, freq='D').strftime('%Y-%m-%d').tolist()
+        
+        df = pd.DataFrame.from_dict(data, orient='index')        
+        df = df.reindex(index=dates, columns=site_ids, fill_value=0.0)
+        
+        columns = [(f"{sites_map[site_id].name} ({site_id})", 'Production - Energy (WH)') for site_id in site_ids]
+        df.columns = MultiIndex.from_tuples(columns)
+
+        prefix = cls.get_vendorcode()
+        dynamic_file_name = f"{prefix}_production_{year}_{file_suffix}.csv"
+
+        df.to_csv(dynamic_file_name, index_label='Date')
+        return dynamic_file_name
+
+
     @classmethod
     def convert_alert_to_standard(cls, alert):
         if alert == "SITE_COMMUNICATION_FAULT":
