@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Optional
-import datetime
-from datetime import timedelta, datetime, date
+import csv
+
+import time as pytime
+from datetime import datetime, date, timedelta, time
 import numpy as np
 import pandas as pd
 from pandas import MultiIndex
@@ -10,10 +12,9 @@ import requests
 import random
 import streamlit as st
 import keyring
-import time
+
 import api_keys
 import SolarPlatform
-import csv
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
 SOLAREDGE_SITE_URL = 'https://monitoring.solaredge.com/solaredge-web/p/site/'
@@ -104,7 +105,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         params = {"types": ["BATTERY", "INVERTER"]}
 
         cls.log(f"Fetching Inverter / battery inventory data from SolarEdge API for site {raw_site_id}.")
-        time.sleep(SOLAREDGE_SLEEP)
+        pytime.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
@@ -139,7 +140,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         params = {'from': start_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
                   'resolution': 'QUARTER_HOUR', 'unit': 'PERCENTAGE'}
         
-        time.sleep(SOLAREDGE_SLEEP)
+        pytime.sleep(SOLAREDGE_SLEEP)
         cls.log(f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
@@ -178,7 +179,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                   'resolution': 'QUARTER_HOUR', 'unit': 'KW'}
 
         cls.log(f"Fetching production from SolarEdge API for site: {raw_site_id} inverter: {inverter_id} at {formatted_begin_time}.")
-        time.sleep(SOLAREDGE_SLEEP)
+        pytime.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         json = response.json().get('values', [])
@@ -236,7 +237,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         # Log the exact URL for debugging
         full_url = requests.Request('GET', url, headers=SOLAREDGE_HEADERS, params=params).prepare().url
         cls.log(f"Fetching energy from SolarEdge API for site: {raw_site_id} with URL: {full_url}")
-        time.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
+        pytime.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
     
         # Make API request with retries
         for attempt in range(3):
@@ -253,7 +254,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                 cls.log(f"Attempt {attempt+1} failed for site {raw_site_id}: {e}")
                 if attempt == 2:  # Last attempt
                     raise  # Rethrow after 3 failures
-                time.sleep(5)  # Wait before retrying
+                pytime.sleep(5)  # Wait before retrying
     
 
     @classmethod
@@ -283,32 +284,32 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         for site_id in site_ids:
             raw_site_id = cls.strip_vendorcodeprefix(site_id)
             
-        error_msg = None
+            error_msg = None
     
-        for start_date, end_date in intervals:
-            try:
-                energy_data = cls._get_site_energy(raw_site_id, start_date, end_date)
-                if energy_data and (energy_data[0]['timestamp'].split('T')[0] != start_date.strftime('%Y-%m-%d') or energy_data[-1]['timestamp'].split('T')[0] != end_date.strftime('%Y-%m-%d')):
-                    cls.log(f"Warning: Data range mismatch for site {raw_site_id}: requested {start_date} to {end_date}, got {energy_data[0]['timestamp']} to {energy_data[-1]['timestamp']}")
-            except Exception as e:
-                error_msg = f"Error for site {raw_site_id} from {start_date} to {end_date}: {str(e)}"
-                cls.log(error_msg)
-                break  # Stop processing this site and move to saving
+            for start_date, end_date in intervals:
+                try:
+                    energy_data = cls._get_site_energy(raw_site_id, start_date, end_date)
+                    if energy_data and (energy_data[0]['timestamp'].split('T')[0] != start_date.strftime('%Y-%m-%d') or energy_data[-1]['timestamp'].split('T')[0] != end_date.strftime('%Y-%m-%d')):
+                        cls.log(f"Warning: Data range mismatch for site {raw_site_id}: requested {start_date} to {end_date}, got {energy_data[0]['timestamp']} to {energy_data[-1]['timestamp']}")
+                except Exception as e:
+                    error_msg = f"Error for site {raw_site_id} from {start_date} to {end_date}: {str(e)}"
+                    cls.log(error_msg)
+                    break  # Stop processing this site and move to saving
 
-            if not energy_data:
-                cls.log(f"No data returned for site {raw_site_id} from {start_date} to {end_date}")
-            else:
-                cls.log(f"Returned {len(energy_data)} items for site {raw_site_id} from {start_date} to {end_date}")
+                if not energy_data:
+                    cls.log(f"No data returned for site {raw_site_id} from {start_date} to {end_date}")
+                else:
+                    cls.log(f"Returned {len(energy_data)} items for site {raw_site_id} from {start_date} to {end_date}")
 
-            for item in energy_data:
-                date_str = item['timestamp'].split('T')[0]
-                value = item['value']
-                if date_str not in data:
-                    data[date_str] = {}
-                data[date_str][site_id] = value
-    
-            if error_msg:
-                break  # Stop processing further sites if an error occurred
+                for item in energy_data:
+                    date_str = item['timestamp'].split('T')[0]
+                    value = item['value']
+                    if date_str not in data:
+                        data[date_str] = {}
+                    data[date_str][site_id] = value
+        
+                if error_msg:
+                    break  # Stop processing further sites if an error occurred
 
         start_date = date(year, 1, 1)
         end_date = date(year, 12, 31)
