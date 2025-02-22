@@ -165,6 +165,7 @@ class SolarPlatform(ABC):
     def log(cls, message: str):
         formatted_str = pprint.pformat(message, depth=None, width=120)
         print(formatted_str)
+        st.write(formatted_str)
         current_logs = cache.get("global_logs", "")
         cache.set("global_logs", current_logs + formatted_str + "\n")
 
@@ -175,7 +176,6 @@ CACHE_EXPIRE_WEEK = CACHE_EXPIRE_DAY * 7
 CACHE_EXPIRE_YEAR = CACHE_EXPIRE_DAY * 365
 
 # Scatter monthly requests over a period of 10 days to avoid cache stampede.
-
 def CACHE_EXPIRE_MONTH():
     base = CACHE_EXPIRE_WEEK * 4
     offset = random.randint(-CACHE_EXPIRE_DAY * 5, CACHE_EXPIRE_DAY * 5)
@@ -197,20 +197,6 @@ def disk_cache(expiration_seconds):
         return wrapper
     return decorator
 
-
-def get_recent_noon() -> datetime:
-    now = get_now()
-    tz = ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE))
-    today = now.date()
-
-    threshold = datetime.combine(today, time(12, 30), tzinfo=tz)  # Threshold in specified tz
-
-    measurement_date = today if now >= threshold else today - timedelta(days=1)
-
-    noon_local = datetime.combine(measurement_date, time(12, 0), tzinfo=tz) # Noon in specified tz
-    noon_utc = noon_local.astimezone(ZoneInfo("UTC")) # Convert to UTC
-
-    return noon_utc
 
 nomi = pgeocode.Nominatim('us')
 

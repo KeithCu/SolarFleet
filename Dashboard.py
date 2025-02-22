@@ -139,8 +139,6 @@ def display_historical_chart():
         x=alt.X('production_day:T', title='Date'),
         y=alt.Y('total_noon_kw:Q', title='Aggregated Production (KW)'),
         tooltip=['production_day:T', 'total_noon_kw:Q']
-    ).properties(
-        title="Historical Production Data"
     )
 
     st.altair_chart(chart, use_container_width=True)
@@ -487,32 +485,30 @@ if authentication_status == True:
                     )
 
     with tabUsers:
-        with st.expander("Create New User"):
-            user_name = st.text_input("User Name")
-            hashed_password = st.text_input("Hashed Password", type="default")
-            email = st.text_input("Email Address", type="default")
+        user_name = st.text_input("User Name")
+        hashed_password = st.text_input("Hashed Password", type="default")
+        email = st.text_input("Email Address", type="default")
 
-            if st.button("Create User"):
-                add_user(user_name, hashed_password, email)
-                st.success(f"User '{user_name}' created successfully!")
-                st.write(f"Email: {email}")
-                st.write(f"Hashed Password: {hashed_password}")
+        if st.button("Create User"):
+            add_user(user_name, hashed_password, email)
+            st.success(f"User '{user_name}' created successfully!")
+            st.write(f"Email: {email}")
+            st.write(f"Hashed Password: {hashed_password}")
 
-        with st.expander("Delete User"):
-            credentials_data = load_credentials()
-            usernames = list(credentials_data['credentials']['usernames'].keys()) if 'credentials' in credentials_data and 'usernames' in credentials_data['credentials'] else []
-            user_to_delete = st.selectbox("Select User to Delete", options=usernames)
+        credentials_data = load_credentials()
+        usernames = list(credentials_data['credentials']['usernames'].keys()) if 'credentials' in credentials_data and 'usernames' in credentials_data['credentials'] else []
+        user_to_delete = st.selectbox("Select User to Delete", options=usernames)
 
-            if st.button("Delete User"):
-                if user_to_delete:
-                    if delete_user(user_to_delete):
-                        st.success(f"User '{user_to_delete}' deleted successfully!")
-                else:
-                    st.warning("No users available to delete or no user selected.")
+        if st.button("Delete User"):
+            if user_to_delete:
+                if delete_user(user_to_delete):
+                    st.success(f"User '{user_to_delete}' deleted successfully!")
+            else:
+                st.warning("No users available to delete or no user selected.")
 
 
 
-    st.header("📊 Historical Production Data")
+    st.header("📊 Noon Production Data")
     display_historical_chart()
 
     valid_production_dates = db.get_valid_production_dates()
@@ -520,11 +516,18 @@ if authentication_status == True:
 
     platform.log("Starting application at " + str(datetime.now()))
 
-    if st.button("Run Fleet Data Collection"):
-        run_collection()
-        st.success("Collection complete!")
+    if 'collection_running' not in SolarPlatform.cache:
+        SolarPlatform.cache['collection_running'] = False
 
-    
+    if st.button("Run Fleet Data Collection") and not SolarPlatform.cache['collection_running']:
+        SolarPlatform.cache['collection_running'] = True
+        status_container = st.status("Running collection...", expanded=True)
+        with status_container:
+            run_collection()
+            status_container.update(label="Collection complete!", state="complete")
+            if st.button("Done"):
+                SolarPlatform.cache['collection_running'] = False
+
     st.markdown("---")
 
     production_set = db.get_production_set(recent_noon)

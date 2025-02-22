@@ -1,9 +1,10 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from typing import List
 import sys
 import math
-import time
+import time as pytime
 import requests
+from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -17,11 +18,25 @@ import Database as db
 from SolarEdge import SolarEdgePlatform
 from Enphase import EnphasePlatform
 
+def get_recent_noon() -> datetime:
+    now = SolarPlatform.get_now()
+    tz = ZoneInfo(SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE))
+    today = now.date()
+
+    threshold = datetime.combine(today, time(12, 30), tzinfo=tz)  # Threshold in specified tz
+
+    measurement_date = today if now >= threshold else today - timedelta(days=1)
+
+    noon_local = datetime.combine(measurement_date, time(12, 0), tzinfo=tz) # Noon in specified tz
+    noon_utc = noon_local.astimezone(ZoneInfo("UTC")) # Convert to UTC
+
+    return noon_utc
+
 def collect_platform(platform):
     sites = None
     platform.log("Starting collection at " + str(datetime.now()))
     production_set = set()
-    reference_date = SolarPlatform.get_recent_noon()
+    reference_date = get_recent_noon()
     sites = platform.get_sites_map()
 
     try:
@@ -45,8 +60,7 @@ def collect_platform(platform):
                 production_set.add(new_production)
 
         # Add production data to database
-        db.process_bulk_solar_production(
-            reference_date, production_set, False, 3.0)
+        db.process_bulk_solar_production(reference_date, production_set, False, 3.0)
 
     except Exception as e:
         platform.log(f"Error while fetching sites: {e}")
