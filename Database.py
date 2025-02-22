@@ -211,6 +211,7 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
         return existing_record
 
     except Exception as e:
+        SolarPlatform.log("Error while updating production data: " + str(e))
         session.rollback()
         raise e
     finally:
