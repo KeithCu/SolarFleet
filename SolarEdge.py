@@ -4,7 +4,7 @@ from typing import List, Dict, Optional
 import csv
 
 import time as pytime
-from datetime import datetime, date, timedelta, time
+from datetime import datetime, date, timedelta, time, timezone
 import numpy as np
 import pandas as pd
 from pandas import MultiIndex
@@ -217,10 +217,10 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         tz = ZoneInfo(SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE))
         
         # Convert dates to 6 AM local start and 23:59:59 local end, then to UTC
-        start_local = datetime.combine(start_date, datetime.time(6, 0, 0), tzinfo=tz)
-        end_local = datetime.combine(end_date, datetime.time(23, 59, 59), tzinfo=tz)
-        start_utc = start_local.astimezone(datetime.timezone.utc)
-        end_utc = end_local.astimezone(datetime.timezone.utc)
+        start_local = datetime.combine(start_date, time(6, 0, 0), tzinfo=tz)
+        end_local = datetime.combine(end_date, time(23, 59, 59), tzinfo=tz)
+        start_utc = start_local.astimezone(timezone.utc)
+        end_utc = end_local.astimezone(timezone.utc)
 
         # Format as ISO 8601 with seconds precision and Z
         formatted_start = start_utc.isoformat(timespec='seconds').replace('+00:00', 'Z')
