@@ -41,8 +41,6 @@ def collect_platform(platform):
 
     try:
         for site_id in sites.keys():
-            site = sites[site_id]
-            # This needs to be moved to later when we have the nearest site information
             db.add_site_if_not_exists(site_id)
 
             battery_data = platform.get_batteries_soe(site_id)
@@ -59,6 +57,7 @@ def collect_platform(platform):
                 )
                 production_set.add(new_production)
 
+        platform.log("Data collection complete")
         # Add production data to database
         db.process_bulk_solar_production(reference_date, production_set, False, 3.0)
 
@@ -77,8 +76,8 @@ def collect_platform(platform):
 
 
 def run_collection():
-    platformSolarEdge = SolarEdgePlatform()
-    collect_platform(platformSolarEdge)
-    
-    platformEnphase = EnphasePlatform()
-    collect_platform(platformEnphase)
+    platform_solaredge = SolarEdgePlatform()
+    collect_platform(platform_solaredge)
+
+    platform_enphase = EnphasePlatform()
+    collect_platform(platform_enphase)
