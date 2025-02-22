@@ -63,7 +63,7 @@ class SolarAlert:
     first_triggered: datetime
 
     def __post_init__(self):
-        if not (0 <= self.severity <= 100):
+        if not 0 <= self.severity <= 100:
             raise ValueError("Severity must be between 0 and 100.")
 
 

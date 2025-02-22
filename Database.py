@@ -4,7 +4,6 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.neighbors import BallTree
-
 from sqlalchemy.orm.attributes import flag_modified
 
 import SqlModels as Sql
@@ -217,48 +216,6 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
     finally:
         session.close()
 
-# Bulk process a list of SolarProduction data.
-
-# Parameters:
-#   - production_data: list of SolarProduction records.
-#   - recalibrate: if True, override sanity checks (used when calibrating on a known sunny day).
-#   - sunny_threshold: expected minimum average production on a sunny day.
-
-# Behavior:
-#   1. Computes the average production across all new records.
-#      - If the average is below sunny_threshold and recalibrate is False, the function
-#        refuses to update (to avoid cloudy-day corruption).
-#   2. For each record, it checks if an entry (by vendor_code and site_id) already exists:
-#      - If so, it updates the production and timestamp.
-#      - Otherwise, it adds it as a new entry.
-#   3. For new entries, it builds a combined dataset (existing + new) and uses a BallTree
-#      (with the haversine metric) to compute for each new site the nearest neighbor’s vendor_code,
-#      site_id, and distance (in miles). These values are stored in the new record.
-
-    # # If there are new records, build a BallTree over the combined dataset.
-    # if new_to_insert:
-    #     coords = np.array([[r["lat"], r["lon"]] for r in combined])
-    #     coords_rad = np.radians(coords)
-    #     tree = BallTree(coords_rad, metric='haversine')
-    #     keys = [(r["vendor_code"], r["site_id"]) for r in combined]
-
-    #     # For each new record, compute the nearest neighbor.
-    #     for rec in new_to_insert:
-    #         new_key = (rec["vendor_code"], rec["site_id"])
-    #         query_point = np.radians(np.array([[rec["lat"], rec["lon"]]]))
-    #         dist_rad, ind = tree.query(query_point, k=2)
-    #         # If the closest neighbor is itself, take the second closest.
-    #         if keys[ind[0][0]] == new_key and len(ind[0]) > 1:
-    #             nearest_idx = ind[0][1]
-    #             distance_miles = dist_rad[0][1] * 3958.8
-    #         else:
-    #             nearest_idx = ind[0][0]
-    #             distance_miles = dist_rad[0][0] * 3958.8
-    #         rec["nearest_vendor_code"] = keys[nearest_idx][0]
-    #         rec["nearest_site_id"] = keys[nearest_idx][1]
-    #         rec["nearest_distance"] = int(round(distance_miles))
-
-
 def process_bulk_solar_production(
         reference_date: date,
         production_data: set[SolarPlatform.ProductionRecord],
@@ -283,5 +240,4 @@ def process_bulk_solar_production(
 
     insert_or_update_production_set(production_data, reference_date)
 
-    print(
-        f"Processed {len(production_data)} records. Average production: {avg_prod:.2f}")
+    print(f"Processed {len(production_data)} records. Average production: {avg_prod:.2f}")

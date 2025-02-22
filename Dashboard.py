@@ -280,7 +280,7 @@ def display_battery_section(site_df):
         cols = low_batteries_df.columns.tolist()
         new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
         low_batteries_df = low_batteries_df[new_order]
-        
+
         st.data_editor(
             low_batteries_df,
             key="low_batteries_editor",
@@ -310,7 +310,7 @@ def display_battery_section(site_df):
             cols = all_batteries_df.columns.tolist()
             new_order = ['site_id', 'name', 'url'] + [c for c in cols if c not in ['site_id', 'name', 'url']]
             all_batteries_df = all_batteries_df[new_order]
-            
+
             st.data_editor(
                 all_batteries_df,
                 key="all_batteries_editor",
@@ -371,7 +371,7 @@ def main():
     Sql.init_fleet_db()
     st.title(title)
 
-    with open('./config.yaml') as file:
+    with open('./config.yaml', encoding="utf-8") as file:
         config = yaml.load(file, Loader=SafeLoader)
 
     credentials = load_credentials()
@@ -521,24 +521,24 @@ def main():
             SolarPlatform.cache['collection_completed'] = False
             SolarPlatform.cache['collection_logs'] = []
 
-        # Status display
-        status_container = st.empty()
-        if SolarPlatform.cache['collection_running'] or SolarPlatform.cache['collection_completed']:
-            with status_container.container():
-                with st.status("Running collection..." if SolarPlatform.cache['collection_running'] else "Collection complete!",
-                            expanded=True,
-                            state="running" if SolarPlatform.cache['collection_running'] else "complete"):
-                    for log in SolarPlatform.cache['collection_logs']:
-                        st.write(log)
-                    if SolarPlatform.cache['collection_running'] and not SolarPlatform.cache['collection_completed']:
-                        run_collection()
-                        SolarPlatform.cache['collection_running'] = False
-                        SolarPlatform.cache['collection_completed'] = True
-                        st.rerun()
-                    if SolarPlatform.cache['collection_completed'] and st.button("Done"):
-                        SolarPlatform.cache['collection_running'] = False
-                        SolarPlatform.cache['collection_completed'] = False
-                        SolarPlatform.cache['collection_logs'] = []
+            # Status display
+            status_container = st.empty()
+            if SolarPlatform.cache['collection_running'] or SolarPlatform.cache['collection_completed']:
+                with status_container.container():
+                    with st.status("Running collection..." if SolarPlatform.cache['collection_running'] else "Collection complete!",
+                                expanded=True,
+                                state="running" if SolarPlatform.cache['collection_running'] else "complete"):
+                        for log in SolarPlatform.cache['collection_logs']:
+                            st.write(log)
+                        if SolarPlatform.cache['collection_running'] and not SolarPlatform.cache['collection_completed']:
+                            run_collection()
+                            SolarPlatform.cache['collection_running'] = False
+                            SolarPlatform.cache['collection_completed'] = True
+                            st.rerun()
+                        if SolarPlatform.cache['collection_completed'] and st.button("Done"):
+                            SolarPlatform.cache['collection_running'] = False
+                            SolarPlatform.cache['collection_completed'] = False
+                            SolarPlatform.cache['collection_logs'] = []
 
         st.markdown("---")
 
