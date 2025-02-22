@@ -1,5 +1,4 @@
-from datetime import datetime, timedelta
-from datetime import date
+from datetime import datetime
 from dataclasses import asdict
 
 import numpy as np
@@ -10,14 +9,13 @@ import yaml
 from yaml.loader import SafeLoader
 
 import streamlit as st
-import streamlit.components.v1 as components
 from streamlit_folium import st_folium
 import streamlit_authenticator as stauth
 
 import SolarPlatform
 import SqlModels as Sql
 import Database as db
-from FleetCollector import collect_platform, run_collection
+from FleetCollector import run_collection
 from SolarEdge import SolarEdgePlatform
 from Enphase import EnphasePlatform
 
@@ -25,13 +23,13 @@ def send_browser_notification(title, message):
     js_code = f"""
     if ("Notification" in window) {{
         if (Notification.permission === "granted") {{
-            new Notification("{title}", {{ body: "{message}" }}); 
+            new Notification("{title}", {{ body: "{message}" }});
         }} else if (Notification.permission !== "denied") {{
             Notification.requestPermission().then(permission => {{
                 if (permission === "granted") {{
-                    new Notification("{title}", {{ body: "{message}" }}); 
+                    new Notification("{title}", {{ body: "{message}" }});
                 }}
-            }}); 
+            }});
         }}
     }}
     """
@@ -53,9 +51,8 @@ def has_low_production(production):
                 return True
         return False
     else: # Assume it's a single float
-        production = production
         return np.isnan(production) or production < 0.1
-    
+
 def create_map_view(sites_df):
     # Center the map at the average location of all sites (initially)
     avg_lat = sites_df['latitude'].mean()
@@ -107,7 +104,7 @@ def create_map_view(sites_df):
             icon=folium.DivIcon(
                 html=f"""
                     <div style="
-                        background-color: {color}; 
+                        background-color: {color};
                         border-radius: 50%;
                         width: 30px;
                         height: 30px;
@@ -180,7 +177,7 @@ def process_alert_section(df, header_title, editor_key, save_button_label, colum
         section_df = df[df['alert_type'] == alert_type].copy()
     else:
         section_df = df.copy()
-      
+
     if drop_columns:
         section_df.drop(columns=drop_columns, inplace=True)
 
@@ -197,7 +194,7 @@ def process_alert_section(df, header_title, editor_key, save_button_label, colum
         df = df[df['alert_type'] != alert_type]
     return df
 
-def create_alert_section(site_df, alerts_df):
+def create_alert_section(site_df, alerts_df, sites_history_df):
 
     # Merge alerts_df with site_df to add 'name' and 'url'
     alerts_df = alerts_df.merge(site_df[['site_id', 'name', 'url']], on="site_id", how="left")
@@ -210,7 +207,7 @@ def create_alert_section(site_df, alerts_df):
     if SolarPlatform.FAKE_DATA:
         alerts_df["site_id"] = alerts_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_site_id())        
         alerts_df["name"] = alerts_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_address())
- 
+
     # Merge site history once for all alerts
     merged_alerts_df = alerts_df.merge(
         sites_history_df, on="site_id", how="left")
@@ -265,7 +262,7 @@ def create_alert_section(site_df, alerts_df):
         alert_type=None
     )
 
-def display_battery_section():
+def display_battery_section(site_df):
     st.header("🔋 Batteries Below 10%")
     low_batteries_df = db.fetch_low_batteries()
     if not low_batteries_df.empty:
@@ -326,12 +323,12 @@ def display_battery_section():
 
 
 def load_credentials():
-    with open('./credentials.yaml') as file:
+    with open('./credentials.yaml', encoding="utf-8") as file:
         credentials = yaml.load(file, Loader=SafeLoader) or {'credentials': {'usernames': {}}}
         return credentials
 
 def save_credentials(credentials):
-    with open('./credentials.yaml', 'w') as file:
+    with open('./credentials.yaml', 'w', encoding="utf-8") as file:
         yaml.dump(credentials, file)
 
 def add_user(user_name, hashed_password, email):
@@ -363,245 +360,263 @@ def delete_user(user_name):
         st.error(f"User '{user_name}' not found.")
         return False
 
-#    
+#
 # Main Streamlit code/UI starts here
 #
 
-title = "☀️ Absolute Solar Monitoring"
-st.set_page_config(page_title=title, layout="wide")
-Sql.init_fleet_db()
-st.title(title)
+def main():
 
-with open('./config.yaml') as file:
-    config = yaml.load(file, Loader=SafeLoader)
+    title = "☀️ Absolute Solar Monitoring"
+    st.set_page_config(page_title=title, layout="wide")
+    Sql.init_fleet_db()
+    st.title(title)
 
-credentials = load_credentials()
+    with open('./config.yaml') as file:
+        config = yaml.load(file, Loader=SafeLoader)
 
-authenticator = stauth.Authenticate(
-    credentials['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days'],
-)
+    credentials = load_credentials()
 
-if "authentication_status" not in st.session_state:
-    st.session_state["authentication_status"] = None
-
-try:
-    auth_result = authenticator.login(location='main', key='Login')
-except Exception as e:
-    st.error(f"Login error: {e}")
-    auth_result = None
-
-if auth_result is not None:
-    name, authentication_status, username = auth_result
-else:
-    authentication_status = st.session_state.get("authentication_status", None)
-
-if authentication_status == True:
-    authenticator.logout('Logout', 'main')
-    
-    #
-    # After authentication
-    #
-
-    platform = SolarEdgePlatform()
-    sites = platform.get_sites_map()
-
-    platform = EnphasePlatform()
-    sites_enphase = platform.get_sites_map()
-
-    #depend on solaredge platform for now
-    platform = SolarEdgePlatform()
-
-    sites.update(sites_enphase)
-
-    tabContent, tabSettings, tabProduction, tabUsers = st.tabs(["Content ", "Settings", "Production", "Users"])
-    with tabContent:
-        st.metric("Active Sites In Fleet", len(sites))
-
-    with tabSettings:
-        all_timezones = sorted(SolarPlatform.SELECT_TIMEZONES)
-        current_timezone = SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE)      
-        with st.expander("Time Zone Configuration", expanded=True):
-            selected_timezone_str = st.selectbox(
-                "Select Time Zone",
-                options=all_timezones,
-                index=all_timezones.index(current_timezone) if current_timezone in all_timezones else 0 # Default to first if default_timezone not found
-            )
-            SolarPlatform.cache.add("TimeZone", selected_timezone_str)
-
-        with st.expander("Show Logs", expanded=False):
-            st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
-
-        if st.button("Delete Alerts (Test)"):
-            db.delete_all_alerts()
-            st.success("All alerts deleted!")
-        if st.button("Delete Alerts API Cache (Test)"):
-            alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
-            for key in alerts_cache_keys:
-                del SolarPlatform.cache[key]
-            st.success("Alerts cache cleared!")
-        if st.button("Delete Battery data (Test)"):
-            db.delete_all_batteries()
-            st.success("Battery data cleared!")
-        if st.button("convert api_keys to keyring"):
-            SolarPlatform.set_keyring_from_api_keys()
-        if st.button("Clear Logs"):
-            SolarPlatform.cache.delete("global_logs")
-            st.success("Battery data cleared!")
-
-    #working
-    with tabProduction:
-        # UI elements
-        site_ids_input = st.text_input("Enter site ID or comma-separated site IDs (e.g., SE:3148836, SE:3148837)", "")
-        all_sites = st.checkbox("Select All Sites")
-
-        current_year = pd.Timestamp.now().year
-        years = list(range(current_year - 5, current_year + 1))
-        selected_year = st.selectbox("Select Year", years, index=years.index(current_year - 1))
-
-        # Process the input
-        if all_sites:
-            site_ids = None
-        else:
-            # Parse the input into a list, handling single or multiple site IDs
-            site_ids = [site_id.strip() for site_id in site_ids_input.split(",") if site_id.strip()]
-
-        # Ensure at least one site ID is provided or "All" is selected
-        if not site_ids and not all_sites:
-            st.warning("Please enter at least one site ID or select 'All Sites'.")
-        else:
-            if st.button("Fetch Production Data"):
-                # Call the API to generate production data for the given site IDs
-                file_name = platform.save_site_yearly_production(selected_year, site_ids)
-                st.success("Production data saved successfully.")
-                with open(file_name, "rb") as file:
-                    st.download_button(
-                        label="Download Production Data",
-                        data=file,
-                        file_name=file_name,
-                        mime="text/csv",
-                    )
-
-    with tabUsers:
-        user_name = st.text_input("User Name")
-        hashed_password = st.text_input("Hashed Password", type="default")
-        email = st.text_input("Email Address", type="default")
-
-        if st.button("Create User"):
-            add_user(user_name, hashed_password, email)
-            st.success(f"User '{user_name}' created successfully!")
-            st.write(f"Email: {email}")
-            st.write(f"Hashed Password: {hashed_password}")
-
-        credentials_data = load_credentials()
-        usernames = list(credentials_data['credentials']['usernames'].keys()) if 'credentials' in credentials_data and 'usernames' in credentials_data['credentials'] else []
-        user_to_delete = st.selectbox("Select User to Delete", options=usernames)
-
-        if st.button("Delete User"):
-            if user_to_delete:
-                if delete_user(user_to_delete):
-                    st.success(f"User '{user_to_delete}' deleted successfully!")
-            else:
-                st.warning("No users available to delete or no user selected.")
-
-
-
-    st.header("📊 Noon Production Data")
-    display_historical_chart()
-
-    valid_production_dates = db.get_valid_production_dates()
-    recent_noon = valid_production_dates[-1]
-
-    platform.log("Starting application at " + str(datetime.now()))
-
-    if 'collection_running' not in SolarPlatform.cache:
-        SolarPlatform.cache['collection_running'] = False
-
-    if st.button("Run Fleet Data Collection") and not SolarPlatform.cache['collection_running']:
-        SolarPlatform.cache['collection_running'] = True
-        status_container = st.status("Running collection...", expanded=True)
-        with status_container:
-            run_collection()
-            status_container.update(label="Collection complete!", state="complete")
-            if st.button("Done"):
-                SolarPlatform.cache['collection_running'] = False
-
-    st.markdown("---")
-
-    production_set = db.get_production_set(recent_noon)
-    df_prod = pd.DataFrame([asdict(record) for record in production_set])
-
-    st.header("🚨 Active Alerts")
-
-    alerts_df = db.fetch_alerts()
-
-    # Generate synthetic alerts for sites with production below 0.1 kW
-    existing_alert_sites = set(alerts_df['site_id'].unique())
-    synthetic_alerts = []
-    for record in production_set:
-        if has_low_production(record.production_kw) and record.site_id not in existing_alert_sites:
-            synthetic_alert = SolarPlatform.SolarAlert(
-                site_id=record.site_id,
-                alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
-                severity=100,
-                details="",
-                first_triggered=SolarPlatform.get_now()
-            )
-            synthetic_alerts.append(synthetic_alert)
-
-    if synthetic_alerts:
-        synthetic_df = pd.DataFrame([asdict(alert) for alert in synthetic_alerts])
-        alerts_df = pd.concat([alerts_df, synthetic_df], ignore_index=True)
-
-    site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
-
-    # Fetch the site history
-    sites_history_df = db.fetch_sites()[["site_id", "history"]]
-
-    if not alerts_df.empty:
-        create_alert_section(site_df, alerts_df)
-    else:
-        st.success("No active alerts.")
-
-    display_battery_section()
-
-    st.header("🌍 Site Map with Production Data")
-
-    selected_date = st.date_input(
-        "Select Date",
-        recent_noon,
-        min_value=min(valid_production_dates),
-        max_value=max(valid_production_dates)
+    authenticator = stauth.Authenticate(
+        credentials['credentials'],
+        config['cookie']['name'],
+        config['cookie']['key'],
+        config['cookie']['expiry_days'],
     )
 
-    production_set = db.get_production_set(selected_date)
-    df_prod = pd.DataFrame([asdict(record) for record in production_set])
+    if "authentication_status" not in st.session_state:
+        st.session_state["authentication_status"] = None
 
-    if not df_prod.empty and 'latitude' in site_df.columns:
-        site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
-        site_df = site_df.merge(df_prod, on="site_id", how="left")
+    try:
+        auth_result = authenticator.login(location='main', key='Login')
+    except Exception as e:
+        st.error(f"Login error: {e}")
+        auth_result = None
 
-        site_df['production_kw_total'] = site_df['production_kw'].apply(SolarPlatform.calculate_production_kw)
-        site_df['production_kw'] = site_df['production_kw'].round(2)
+    if auth_result is not None:
+        name, authentication_status, username = auth_result
+    else:
+        authentication_status = st.session_state.get("authentication_status", None)
 
-        create_map_view(site_df)
+    if authentication_status == True:
+        authenticator.logout('Logout', 'main')
+       
+        #
+        # After authentication
+        #
+
+        platform = SolarEdgePlatform()
+        sites = platform.get_sites_map()
+
+        platform = EnphasePlatform()
+        sites_enphase = platform.get_sites_map()
+
+        #depend on solaredge platform for now
+        platform = SolarEdgePlatform()
+
+        sites.update(sites_enphase)
+
+        tab_content, tab_settings, tab_production, tab_users = st.tabs(["Content ", "Settings", "Production", "Users"])
+        with tab_content:
+            st.metric("Active Sites In Fleet", len(sites))
+
+        with tab_settings:
+            all_timezones = sorted(SolarPlatform.SELECT_TIMEZONES)
+            current_timezone = SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE)      
+            with st.expander("Time Zone Configuration", expanded=True):
+                selected_timezone_str = st.selectbox(
+                    "Select Time Zone",
+                    options=all_timezones,
+                    index=all_timezones.index(current_timezone) if current_timezone in all_timezones else 0 # Default to first if default_timezone not found
+                )
+                SolarPlatform.cache.add("TimeZone", selected_timezone_str)
+
+            with st.expander("Show Logs", expanded=False):
+                st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
+
+            if st.button("Delete Alerts (Test)"):
+                db.delete_all_alerts()
+                st.success("All alerts deleted!")
+            if st.button("Delete Alerts API Cache (Test)"):
+                alerts_cache_keys = [key for key in SolarPlatform.cache.iterkeys() if key.startswith("get_alerts")]
+                for key in alerts_cache_keys:
+                    del SolarPlatform.cache[key]
+                st.success("Alerts cache cleared!")
+            if st.button("Delete Battery data (Test)"):
+                db.delete_all_batteries()
+                st.success("Battery data cleared!")
+            if st.button("convert api_keys to keyring"):
+                SolarPlatform.set_keyring_from_api_keys()
+            if st.button("Clear Logs"):
+                SolarPlatform.cache.delete("global_logs")
+                st.success("Battery data cleared!")
+
+        #working
+        with tab_production:
+            # UI elements
+            site_ids_input = st.text_input("Enter site ID or comma-separated site IDs (e.g., SE:3148836, SE:3148837)", "")
+            all_sites = st.checkbox("Select All Sites")
+
+            current_year = pd.Timestamp.now().year
+            years = list(range(current_year - 5, current_year + 1))
+            selected_year = st.selectbox("Select Year", years, index=years.index(current_year - 1))
+
+            # Process the input
+            if all_sites:
+                site_ids = None
+            else:
+                # Parse the input into a list, handling single or multiple site IDs
+                site_ids = [site_id.strip() for site_id in site_ids_input.split(",") if site_id.strip()]
+
+            # Ensure at least one site ID is provided or "All" is selected
+            if not site_ids and not all_sites:
+                st.warning("Please enter at least one site ID or select 'All Sites'.")
+            else:
+                if st.button("Fetch Production Data"):
+                    # Call the API to generate production data for the given site IDs
+                    file_name = platform.save_site_yearly_production(selected_year, site_ids)
+                    st.success("Production data saved successfully.")
+                    with open(file_name, "rb") as file:
+                        st.download_button(
+                            label="Download Production Data",
+                            data=file,
+                            file_name=file_name,
+                            mime="text/csv",
+                        )
+
+        with tab_users:
+            user_name = st.text_input("User Name")
+            hashed_password = st.text_input("Hashed Password", type="default")
+            email = st.text_input("Email Address", type="default")
+
+            if st.button("Create User"):
+                add_user(user_name, hashed_password, email)
+                st.success(f"User '{user_name}' created successfully!")
+                st.write(f"Email: {email}")
+                st.write(f"Hashed Password: {hashed_password}")
+
+            credentials_data = load_credentials()
+            usernames = list(credentials_data['credentials']['usernames'].keys()) if 'credentials' in credentials_data and 'usernames' in credentials_data['credentials'] else []
+            user_to_delete = st.selectbox("Select User to Delete", options=usernames)
+
+            if st.button("Delete User"):
+                if user_to_delete:
+                    if delete_user(user_to_delete):
+                        st.success(f"User '{user_to_delete}' deleted successfully!")
+                else:
+                    st.warning("No users available to delete or no user selected.")
+
+
+
+        st.header("📊 Noon Production Data")
+        display_historical_chart()
+
+        valid_production_dates = db.get_valid_production_dates()
+        recent_noon = valid_production_dates[-1]
+
+        platform.log("Starting application at " + str(datetime.now()))
+
+    # Button to start
+        if st.button("Run Fleet Data Collection") and not SolarPlatform.cache['collection_running']:
+            SolarPlatform.cache['collection_running'] = True
+            SolarPlatform.cache['collection_completed'] = False
+            SolarPlatform.cache['collection_logs'] = []
+
+        # Status display
+        status_container = st.empty()
+        if SolarPlatform.cache['collection_running'] or SolarPlatform.cache['collection_completed']:
+            with status_container.container():
+                with st.status("Running collection..." if SolarPlatform.cache['collection_running'] else "Collection complete!",
+                            expanded=True,
+                            state="running" if SolarPlatform.cache['collection_running'] else "complete"):
+                    for log in SolarPlatform.cache['collection_logs']:
+                        st.write(log)
+                    if SolarPlatform.cache['collection_running'] and not SolarPlatform.cache['collection_completed']:
+                        run_collection()
+                        SolarPlatform.cache['collection_running'] = False
+                        SolarPlatform.cache['collection_completed'] = True
+                        st.rerun()
+                    if SolarPlatform.cache['collection_completed'] and st.button("Done"):
+                        SolarPlatform.cache['collection_running'] = False
+                        SolarPlatform.cache['collection_completed'] = False
+                        SolarPlatform.cache['collection_logs'] = []
+
         st.markdown("---")
 
-        if SolarPlatform.FAKE_DATA:
-            site_df["site_id"] = site_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_site_id())        
-            site_df["name"] = site_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_address())
+        production_set = db.get_production_set(recent_noon)
+        df_prod = pd.DataFrame([asdict(record) for record in production_set])
 
-        display_production_chart(site_df)
+        st.header("🚨 Active Alerts")
 
-    else:
-        st.info("No production data available.")
+        alerts_df = db.fetch_alerts()
 
-    #Show all sites
-    st.dataframe(site_df)
+        # Generate synthetic alerts for sites with production below 0.1 kW
+        existing_alert_sites = set(alerts_df['site_id'].unique())
+        synthetic_alerts = []
+        for record in production_set:
+            if has_low_production(record.production_kw) and record.site_id not in existing_alert_sites:
+                synthetic_alert = SolarPlatform.SolarAlert(
+                    site_id=record.site_id,
+                    alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
+                    severity=100,
+                    details="",
+                    first_triggered=SolarPlatform.get_now()
+                )
+                synthetic_alerts.append(synthetic_alert)
 
-elif authentication_status == False:
-    st.error('Username/password is incorrect')
-elif authentication_status == None:
-    st.warning('Please enter your username and password')
+        if synthetic_alerts:
+            synthetic_df = pd.DataFrame([asdict(alert) for alert in synthetic_alerts])
+            alerts_df = pd.concat([alerts_df, synthetic_df], ignore_index=True)
+
+        site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
+
+        # Fetch the site history
+        sites_history_df = db.fetch_sites()[["site_id", "history"]]
+
+        if not alerts_df.empty:
+            create_alert_section(site_df, alerts_df, sites_history_df)
+        else:
+            st.success("No active alerts.")
+
+        display_battery_section(site_df)
+
+        st.header("🌍 Site Map with Production Data")
+
+        selected_date = st.date_input(
+            "Select Date",
+            recent_noon,
+            min_value=min(valid_production_dates),
+            max_value=max(valid_production_dates)
+        )
+
+        production_set = db.get_production_set(selected_date)
+        df_prod = pd.DataFrame([asdict(record) for record in production_set])
+
+        if not df_prod.empty and 'latitude' in site_df.columns:
+            site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
+            site_df = site_df.merge(df_prod, on="site_id", how="left")
+
+            site_df['production_kw_total'] = site_df['production_kw'].apply(SolarPlatform.calculate_production_kw)
+            site_df['production_kw'] = site_df['production_kw'].round(2)
+
+            create_map_view(site_df)
+            st.markdown("---")
+
+            if SolarPlatform.FAKE_DATA:
+                site_df["site_id"] = site_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_site_id())       
+                site_df["name"] = site_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_address())
+
+            display_production_chart(site_df)
+
+        else:
+            st.info("No production data available.")
+
+        #Show all sites
+        st.dataframe(site_df)
+
+    elif authentication_status == False:
+        st.error('Username/password is incorrect')
+    elif authentication_status == None:
+        st.warning('Please enter your username and password')
+
+if __name__ == "__main__":
+    main()

@@ -1,24 +1,31 @@
-import pgeocode
-import numpy as np
+import random
+from typing import List, Dict, Union
+from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from zoneinfo import ZoneInfo
-import streamlit as st
-from typing import List, Dict, Union
-import diskcache
-import pprint
-from zoneinfo import ZoneInfo
-import zoneinfo
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional
-import random
 import math
-from datetime import datetime, timedelta, time
+from datetime import datetime
+
+import pprint
 import keyring
+import diskcache
+import pgeocode
+import numpy as np
+import streamlit as st
+
 import api_keys
 
 # Disk cache decorator to save remote API calls.
 cache = diskcache.Cache(".")
+
+if 'collection_running' not in cache:
+    cache['collection_running'] = False
+if 'collection_completed' not in cache:
+    cache['collection_completed'] = False
+if 'collection_logs' not in cache:
+    cache['collection_logs'] = []
+if 'global_logs' not in cache:
+    cache['global_logs'] = ""
 
 DEFAULT_TIMEZONE = "US/Eastern"
 
@@ -117,8 +124,6 @@ def get_now():
     return datetime.now(ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE)))
     
 class SolarPlatform(ABC):
-    log_container = None # st.empty() A Streamlit container to display log messages
-    log_text = ""  # A string to store cumulative log messages
 
     @classmethod
     @abstractmethod
@@ -164,19 +169,19 @@ class SolarPlatform(ABC):
     @classmethod
     def log(cls, message: str):
         formatted_str = pprint.pformat(message, depth=None, width=120)
-        print(formatted_str)
-        st.write(formatted_str)
-        current_logs = cache.get("global_logs", "")
-        cache.set("global_logs", current_logs + formatted_str + "\n")
+        # Append to collection_logs if collection is running
+        if cache['collection_running']:
+            cache['collection_logs'] = cache['collection_logs'] + [formatted_str]
+        cache['global_logs'] = cache['global_logs'] + formatted_str + "\n"
 
-
+# Button to start the collection
 CACHE_EXPIRE_HOUR = 3600
 CACHE_EXPIRE_DAY = CACHE_EXPIRE_HOUR * 24
 CACHE_EXPIRE_WEEK = CACHE_EXPIRE_DAY * 7
 CACHE_EXPIRE_YEAR = CACHE_EXPIRE_DAY * 365
 
 # Scatter monthly requests over a period of 10 days to avoid cache stampede.
-def CACHE_EXPIRE_MONTH():
+def cache_expire_month():
     base = CACHE_EXPIRE_WEEK * 4
     offset = random.randint(-CACHE_EXPIRE_DAY * 5, CACHE_EXPIRE_DAY * 5)
     return base + offset

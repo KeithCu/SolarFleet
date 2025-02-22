@@ -99,7 +99,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return sites_dict
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_MONTH())
+    @SolarPlatform.disk_cache(SolarPlatform.cache_expire_month())
     def get_devices(cls, raw_site_id):
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/devices'
         params = {"types": ["BATTERY", "INVERTER"]}

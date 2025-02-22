@@ -178,7 +178,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
         return [0.0]
 
     @classmethod
-    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_MONTH())
+    @SolarPlatform.disk_cache(SolarPlatform.cache_expire_month())
     def get_site_devices(cls, raw_system_id) -> dict:
         access_token = cls.get_access_token()
         if not access_token:
