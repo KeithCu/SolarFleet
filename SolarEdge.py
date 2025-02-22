@@ -212,10 +212,6 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
     def _get_site_energy(cls, raw_site_id, start_date, end_date):
-        """
-        Helper method to fetch site energy data for a specific date range with daily resolution,
-        using local midnight from cached timezone converted to UTC.
-        """
         # Get local timezone from cache, defaulting to SolarPlatform.DEFAULT_TIMEZONE
         tz = ZoneInfo(SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE))
         
@@ -240,7 +236,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         # Log the exact URL for debugging
         full_url = requests.Request('GET', url, headers=SOLAREDGE_HEADERS, params=params).prepare().url
         cls.log(f"Fetching energy from SolarEdge API for site: {raw_site_id} with URL: {full_url}")
-        time.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
+        time.sleep(2) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
         
         # Make API request
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
@@ -270,7 +266,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
 
         start_of_year = datetime.date(year, 1, 1)
         end_of_year = datetime.date(year, 12, 31)
-        interval = datetime.timedelta(days=60)
+        interval = datetime.timedelta(days=80)
         intervals = []
         current_start = start_of_year
         while current_start <= end_of_year:
@@ -280,6 +276,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     
         for site_id in site_ids:
             raw_site_id = cls.strip_vendorcodeprefix(site_id)
+            
             for start_date, end_date in intervals:
                 energy_data = cls._get_site_energy(raw_site_id, start_date, end_date)
                 if energy_data and (energy_data[0]['timestamp'].split('T')[0] != start_date.strftime('%Y-%m-%d') or energy_data[-1]['timestamp'].split('T')[0] != end_date.strftime('%Y-%m-%d')):
