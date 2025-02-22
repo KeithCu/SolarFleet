@@ -236,7 +236,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         # Log the exact URL for debugging
         full_url = requests.Request('GET', url, headers=SOLAREDGE_HEADERS, params=params).prepare().url
         cls.log(f"Fetching energy from SolarEdge API for site: {raw_site_id} with URL: {full_url}")
-        time.sleep(2) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
+        time.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
         
         # Make API request
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
