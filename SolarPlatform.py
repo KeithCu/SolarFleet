@@ -172,6 +172,7 @@ class SolarPlatform(ABC):
         # Append to collection_logs if collection is running
         if cache['collection_running']:
             cache['collection_logs'] = cache['collection_logs'] + [formatted_str]
+        st.write(formatted_str)
         cache['global_logs'] = cache['global_logs'] + formatted_str + "\n"
 
 # Button to start the collection
