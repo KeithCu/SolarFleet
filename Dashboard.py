@@ -43,9 +43,9 @@ def format_production_tooltip(production_kw):
 
 # Return low production if any inverter is producing less than 100 watts
 def has_low_production(production):
-    if not isinstance(production, dict):
-        raise TypeError(f"Expected a dictionary for production, got {type(production).__name__}")
-    return any(np.isnan(value) or value < 0.1 for value in production.values())
+    if isinstance(production, dict):
+        return any(np.isnan(value) or value < 0.1 for value in production.values())
+    return True
 
 def create_map_view(sites_df):
     # Center the map at the average location of all sites (initially)
