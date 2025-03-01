@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from zoneinfo import ZoneInfo
 import math
 from datetime import datetime
-
+import queue
 import pprint
 import keyring
 import diskcache
@@ -18,14 +18,8 @@ import api_keys
 # Disk cache decorator to save remote API calls.
 cache = diskcache.Cache(".")
 
-#set this to false at startup
-#if 'collection_running' not in cache:
 cache['collection_running'] = False
-
-if 'collection_completed' not in cache:
-    cache['collection_completed'] = False
-if 'collection_logs' not in cache:
-    cache['collection_logs'] = []
+cache['collection_completed'] = False
 if 'global_logs' not in cache:
     cache['global_logs'] = ""
 
@@ -149,6 +143,7 @@ def get_now():
     return datetime.now(ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE)))
     
 class SolarPlatform(ABC):
+    collection_queue = queue.Queue()
 
     @classmethod
     @abstractmethod
@@ -194,11 +189,10 @@ class SolarPlatform(ABC):
     @classmethod
     def log(cls, message: str):
         formatted_str = pprint.pformat(message, depth=None, width=120)
-        # Append to collection_logs if collection is running
-        if cache['collection_running']:
-            cache['collection_logs'] = cache['collection_logs'] + [formatted_str]
-        st.write(formatted_str)
-        cache['global_logs'] = cache['global_logs'] + formatted_str + "\n"
+        if cache.get('collection_running', True):
+            cls.collection_queue.put(formatted_str)
+
+        cache['global_logs'] = cache.get('global_logs', '') + formatted_str + "\n"
 
 # Button to start the collection
 CACHE_EXPIRE_HOUR = 3600

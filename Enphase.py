@@ -197,6 +197,11 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             return []
 
     @classmethod
+    @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
+    def get_site_energy(cls, site_id, start_date, end_date):
+        pass
+
+    @classmethod
     def get_batteries_metadata(cls, raw_system_id) -> list:
         json = cls.get_site_devices(raw_system_id)
         devices = json.get("devices", [])

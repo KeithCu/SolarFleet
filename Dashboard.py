@@ -15,7 +15,7 @@ import streamlit_authenticator as stauth
 import SolarPlatform
 import SqlModels as Sql
 import Database as db
-from FleetCollector import run_collection
+from FleetCollector import run_collection, save_site_yearly_production
 from SolarEdge import SolarEdgePlatform
 from Enphase import EnphasePlatform
 
@@ -467,7 +467,8 @@ def main():
             else:
                 if st.button("Fetch Production Data"):
                     # Call the API to generate production data for the given site IDs
-                    file_name = platform.save_site_yearly_production(selected_year, site_ids)
+                    platform_t = SolarEdgePlatform()
+                    file_name = save_site_yearly_production(platform_t, selected_year, site_ids)
                     st.success("Production data saved successfully.")
                     with open(file_name, "rb") as file:
                         st.download_button(
@@ -509,30 +510,17 @@ def main():
 
         platform.log("Starting application at " + str(datetime.now()))
 
-    # Button to start
-        if st.button("Run Fleet Data Collection") and not SolarPlatform.cache['collection_running']:
-            SolarPlatform.cache['collection_running'] = True
-            SolarPlatform.cache['collection_completed'] = False
-            SolarPlatform.cache['collection_logs'] = []
+        #Button to start
 
-            # Status display
-            status_container = st.empty()
-            if SolarPlatform.cache['collection_running'] or SolarPlatform.cache['collection_completed']:
-                with status_container.container():
-                    with st.status("Running collection..." if SolarPlatform.cache['collection_running'] else "Collection complete!",
-                                expanded=True,
-                                state="running" if SolarPlatform.cache['collection_running'] else "complete"):
-                        for log in SolarPlatform.cache['collection_logs']:
-                            st.write(log)
-                        if SolarPlatform.cache['collection_running'] and not SolarPlatform.cache['collection_completed']:
-                            run_collection()
-                            SolarPlatform.cache['collection_running'] = False
-                            SolarPlatform.cache['collection_completed'] = True
-                            st.rerun()
-                        if SolarPlatform.cache['collection_completed'] and st.button("Done"):
-                            SolarPlatform.cache['collection_running'] = False
-                            SolarPlatform.cache['collection_completed'] = False
-                            SolarPlatform.cache['collection_logs'] = []
+        if st.button("Run Fleet Data Collection") and not SolarPlatform.cache['collection_running']:
+            st.write("Collection started. Logs will appear below:")
+
+            #Starts 1 thread per platform
+            run_collection()
+
+            # Display completion message
+            st.success("Collection complete!")
+            #st.stop()
 
         st.markdown("---")
 
