@@ -1,16 +1,19 @@
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Optional
-
-import time as pytime
-from datetime import datetime, date, timedelta, time, timezone
+import datetime
+from datetime import timedelta, datetime, date
+import numpy as np
 import pandas as pd
 from pandas import MultiIndex
 import requests
+import random
+import streamlit as st
 import keyring
-
+import time
 import api_keys
 import SolarPlatform
+import csv
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
 SOLAREDGE_SITE_URL = 'https://monitoring.solaredge.com/solaredge-web/p/site/'
@@ -29,15 +32,14 @@ def fetch_solaredge_keys():
             raise ValueError("Missing SolarEdge key(s) in keyring.")
 
         return SolarEdgeKeys(account_key, api_key)
-
+    
     except Exception as e:
         print(f"Error fetching SolarEdge keys: {e}")
         return None
-
+    
 #SOLAREDGE_KEYS = fetch_solaredge_keys()
 
 SOLAREDGE_SLEEP = 0.2
-SOLAREDGE_LONGSLEEP = 1.0 #For long requests like fetching 80 days of data
 
 SOLAREDGE_KEYS = SolarEdgeKeys(api_keys.SOLAREDGE_V2_ACCOUNT_KEY, api_keys.SOLAREDGE_V2_API_KEY)
 
@@ -102,19 +104,19 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         params = {"types": ["BATTERY", "INVERTER"]}
 
         cls.log(f"Fetching Inverter / battery inventory data from SolarEdge API for site {raw_site_id}.")
-        pytime.sleep(SOLAREDGE_SLEEP)
+        time.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
-        return devices
-
+        return devices 
+    
 
     #Sort by created_time so that the order is stable.
     @classmethod
     def get_inverters(cls, raw_site_id):
         devices = cls.get_devices(raw_site_id)
 
-        inverters = [device for device in devices if device.get('type') == 'INVERTER' and device.get('active') is True]
+        inverters = [device for device in devices if device.get('type') == 'INVERTER' and device.get('active') == True]
         sorted_data = sorted(inverters, key=lambda x: x['createdAt'])
         return sorted_data
 
@@ -123,7 +125,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     def get_batteries(cls, raw_site_id):
         devices = cls.get_devices(raw_site_id)
 
-        batteries = [device for device in devices if device.get('type') == 'BATTERY'  and device.get('active') is True]
+        batteries = [device for device in devices if device.get('type') == 'BATTERY'  and device.get('active') == True]
         return batteries
 
 
@@ -136,8 +138,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         url = f'{SOLAREDGE_BASE_URL}/sites/{raw_site_id}/storage/{serial_number}/state-of-energy'
         params = {'from': start_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
                   'resolution': 'QUARTER_HOUR', 'unit': 'PERCENTAGE'}
-
-        pytime.sleep(SOLAREDGE_SLEEP)
+        
+        time.sleep(SOLAREDGE_SLEEP)
         cls.log(f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
@@ -176,7 +178,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                   'resolution': 'QUARTER_HOUR', 'unit': 'KW'}
 
         cls.log(f"Fetching production from SolarEdge API for site: {raw_site_id} inverter: {inverter_id} at {formatted_begin_time}.")
-        pytime.sleep(SOLAREDGE_SLEEP)
+        time.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         json = response.json().get('values', [])
@@ -193,36 +195,44 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         power = round(power, 2)
         return power
 
+    #Trim the SolarEdge serial numbers to the last 4 digits before the dash, which should be unique for a site.
     @classmethod
-    def get_production(cls, site_id, reference_time) -> List[float]:
+    def extract_last_four_before_dash(cls, serial):
+        return serial.split("-")[0][-4:]
+    
+    @classmethod
+    def get_production(cls, site_id, reference_time) -> Dict[str, float]:
         raw_site_id = cls.strip_vendorcodeprefix(site_id)
         inverters = cls.get_inverters(raw_site_id)
 
-        productions = []
+        productions = {}
         for inverter in inverters:
             serial_number = inverter.get('serialNumber')
             power = cls.get_inverter_production(raw_site_id, reference_time, serial_number)
-            productions.append(power)
+
+            sub_ser = cls.extract_last_four_before_dash(serial_number)
+
+            productions[sub_ser] = power
 
         return productions
-
+    
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
     def _get_site_energy(cls, raw_site_id, start_date, end_date):
         # Get local timezone from cache, defaulting to SolarPlatform.DEFAULT_TIMEZONE
         tz = ZoneInfo(SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE))
-
+        
         # Convert dates to 6 AM local start and 23:59:59 local end, then to UTC
-        start_local = datetime.combine(start_date, time(6, 0, 0), tzinfo=tz)
-        end_local = datetime.combine(end_date, time(23, 59, 59), tzinfo=tz)
-        start_utc = start_local.astimezone(timezone.utc)
-        end_utc = end_local.astimezone(timezone.utc)
+        start_local = datetime.combine(start_date, datetime.time(6, 0, 0), tzinfo=tz)
+        end_local = datetime.combine(end_date, datetime.time(23, 59, 59), tzinfo=tz)
+        start_utc = start_local.astimezone(datetime.timezone.utc)
+        end_utc = end_local.astimezone(datetime.timezone.utc)
 
         # Format as ISO 8601 with seconds precision and Z
         formatted_start = start_utc.isoformat(timespec='seconds').replace('+00:00', 'Z')
         formatted_end = end_utc.isoformat(timespec='seconds').replace('+00:00', 'Z')
-
+        
         # Construct API URL and parameters
         url = SOLAREDGE_BASE_URL + f'/sites/{raw_site_id}/energy'
         params = {
@@ -230,12 +240,12 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             'to': formatted_end,
             'resolution': 'DAY'
         }
-
+        
         # Log the exact URL for debugging
         full_url = requests.Request('GET', url, headers=SOLAREDGE_HEADERS, params=params).prepare().url
         cls.log(f"Fetching energy from SolarEdge API for site: {raw_site_id} with URL: {full_url}")
-        pytime.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
-
+        time.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
+    
         # Make API request with retries
         for attempt in range(3):
             try:
@@ -251,8 +261,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                 cls.log(f"Attempt {attempt+1} failed for site {raw_site_id}: {e}")
                 if attempt == 2:  # Last attempt
                     raise  # Rethrow after 3 failures
-                pytime.sleep(5)  # Wait before retrying
-
+                time.sleep(5)  # Wait before retrying
+    
 
     @classmethod
     def save_site_yearly_production(cls, year: int, site_ids: Optional[List[str]] = None) -> str:
@@ -265,7 +275,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                 file_suffix = "_".join([id.split(":")[1] for id in site_ids])
             else:
                 file_suffix = f"{site_ids[0].split(':')[1]}_et_al"
-
+        
         data = {}
 
         start_of_year = date(year, 1, 1)
@@ -277,12 +287,12 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             current_end = min(current_start + interval - timedelta(days=1), end_of_year)
             intervals.append((current_start, current_end))
             current_start = current_end + timedelta(days=1)
-
+    
         for site_id in site_ids:
             raw_site_id = cls.strip_vendorcodeprefix(site_id)
-
+            
             error_msg = None
-
+    
             for start_date, end_date in intervals:
                 try:
                     energy_data = cls._get_site_energy(raw_site_id, start_date, end_date)
@@ -304,17 +314,17 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                     if date_str not in data:
                         data[date_str] = {}
                     data[date_str][site_id] = value
-
+        
                 if error_msg:
                     break  # Stop processing further sites if an error occurred
 
         start_date = date(year, 1, 1)
         end_date = date(year, 12, 31)
         dates = pd.date_range(start=start_date, end=end_date, freq='D').strftime('%Y-%m-%d').tolist()
-
+        
         df = pd.DataFrame.from_dict(data, orient='index')        
         df = df.reindex(index=dates, columns=site_ids, fill_value=0.0)
-
+        
         columns = [(f"{sites_map[site_id].name} ({site_id})", 'Production - Energy (WH)') for site_id in site_ids]
         df.columns = MultiIndex.from_tuples(columns)
 
@@ -326,7 +336,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             error_row = pd.Series(index=df.columns, dtype='object')
             error_row[:] = error_msg
             f = pd.concat([df, error_row.to_frame().T], ignore_index=False)
-
+            
         df.to_csv(dynamic_file_name, index_label='Date')
         return dynamic_file_name
 
@@ -372,8 +382,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                 else:
                     first_triggered = first_triggered_str
 
-                solar_alert = SolarPlatform.SolarAlert(site_id, alert_type, alert.get('impact'), alert_details, first_triggered)
-                all_alerts.append(solar_alert)
+                solarAlert = SolarPlatform.SolarAlert(site_id, alert_type, alert.get('impact'), alert_details, first_triggered)
+                all_alerts.append(solarAlert)
 
             return all_alerts
         except requests.exceptions.RequestException as e:

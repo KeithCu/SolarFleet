@@ -15,8 +15,12 @@ import SqlModels as Sql
 import SolarPlatform
 import Database as db
 
+# The list of all platforms to collect data from
 from SolarEdge import SolarEdgePlatform
 from Enphase import EnphasePlatform
+# from SolArk import SolArkPlatform
+# from Solis import SolisPlatform
+
 
 def get_recent_noon() -> datetime:
     now = SolarPlatform.get_now()
@@ -48,12 +52,12 @@ def collect_platform(platform):
                 db.update_battery_data(site_id, battery['serialNumber'], battery['model'], battery['stateOfEnergy'])
 
             # Fetch production data and put into set
-            site_production_list = platform.get_production(site_id, reference_date)
+            site_production_dict = platform.get_production(site_id, reference_date)
 
-            if site_production_list is not None:
+            if site_production_dict is not None:
                 new_production = SolarPlatform.ProductionRecord(
                     site_id = site_id,
-                    production_kw = site_production_list,
+                    production_kw = site_production_dict,
                 )
                 production_set.add(new_production)
 
@@ -75,9 +79,16 @@ def collect_platform(platform):
         return
 
 
+#Make this multi-threaded so that it runs all platforms at the same time.
 def run_collection():
     platform_solaredge = SolarEdgePlatform()
     collect_platform(platform_solaredge)
 
     platform_enphase = EnphasePlatform()
     collect_platform(platform_enphase)
+
+    # platform_solark = SolArkPlatform()
+    # collect_platform(platform_solark)
+
+    # platform_solis = SolisPlatform()
+    # collect_platform(platform_solis)

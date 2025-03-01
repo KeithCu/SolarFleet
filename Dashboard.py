@@ -36,22 +36,16 @@ def send_browser_notification(title, message):
     st.components.v1.html(f"<script>{js_code}</script>", height=0)
 
 def format_production_tooltip(production_kw):
-    if isinstance(production_kw, list):
-        formatted_list = [f"{item:.2f}" for item in production_kw]
-        return f"[{', '.join(formatted_list)}]"
-    else:
-        return f"{production_kw:.2f}"
-
+    if not isinstance(production_kw, dict):
+        return str(production_kw)  # Handle unexpected types gracefully
+    formatted_dict = ', '.join(f"{key}: {value:.2f}" for key, value in production_kw.items())
+    return f"{{{formatted_dict}}}"
 
 # Return low production if any inverter is producing less than 100 watts
 def has_low_production(production):
-    if isinstance(production, list):
-        for production in production:
-            if np.isnan(production) or production < 0.1:
-                return True
-        return False
-    else: # Assume it's a single float
-        return np.isnan(production) or production < 0.1
+    if not isinstance(production, dict):
+        raise TypeError(f"Expected a dictionary for production, got {type(production).__name__}")
+    return any(np.isnan(value) or value < 0.1 for value in production.values())
 
 def create_map_view(sites_df):
     # Center the map at the average location of all sites (initially)
@@ -133,7 +127,7 @@ def display_historical_chart():
     historical_df['production_day'] = historical_df['production_day'].dt.normalize() + pd.Timedelta('12h') # Set time to noon
 
     chart = alt.Chart(historical_df).mark_line(size=5).encode(
-        x=alt.X('production_day:T', title='Date'),
+        x=alt.X('production_day:T', title='Date', axis=alt.Axis(format='%m-%d')),  # Show only the date
         y=alt.Y('total_noon_kw:Q', title='Aggregated Production (KW)'),
         tooltip=['production_day:T', 'total_noon_kw:Q']
     )
@@ -415,9 +409,10 @@ def main():
 
         sites.update(sites_enphase)
 
-        tab_content, tab_settings, tab_production, tab_users = st.tabs(["Content ", "Settings", "Production", "Users"])
+        tab_content, tab_settings, tab_logs, tab_production, tab_users = st.tabs(["Content ", "Settings", "Logs", "Production History", "Users"])
         with tab_content:
             st.metric("Active Sites In Fleet", len(sites))
+            st.metric("Active Batteries", db.fetch_battery_count())
 
         with tab_settings:
             all_timezones = sorted(SolarPlatform.SELECT_TIMEZONES)
@@ -429,10 +424,6 @@ def main():
                     index=all_timezones.index(current_timezone) if current_timezone in all_timezones else 0 # Default to first if default_timezone not found
                 )
                 SolarPlatform.cache.add("TimeZone", selected_timezone_str)
-
-            with st.expander("Show Logs", expanded=False):
-                st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
-
             if st.button("Delete Alerts (Test)"):
                 db.delete_all_alerts()
                 st.success("All alerts deleted!")
@@ -446,11 +437,14 @@ def main():
                 st.success("Battery data cleared!")
             if st.button("convert api_keys to keyring"):
                 SolarPlatform.set_keyring_from_api_keys()
+
+        with tab_logs:
+            with st.expander("Show Logs", expanded=False):
+                st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
             if st.button("Clear Logs"):
                 SolarPlatform.cache.delete("global_logs")
-                st.success("Battery data cleared!")
+                st.success("Logs cleared!")
 
-        #working
         with tab_production:
             # UI elements
             site_ids_input = st.text_input("Enter site ID or comma-separated site IDs (e.g., SE:3148836, SE:3148837)", "")

@@ -126,6 +126,11 @@ def fetch_low_batteries():
     return low_batteries
 
 
+def fetch_battery_count():
+    with Sql.SessionLocal() as session:
+        count = session.query(Sql.Battery).count()
+    return count
+
 def fetch_all_batteries():
     session = Sql.SessionLocal()
     query = session.query(Sql.Battery).order_by(

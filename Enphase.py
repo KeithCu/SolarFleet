@@ -169,13 +169,13 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
 
     #Enphase currently only has one production value per site.
     @classmethod
-    def get_production(cls, site_id, reference_time) -> List[float]:
+    def get_production(cls, site_id, reference_time) -> Dict[str, float]:
         json = cls.get_production_micros(site_id, reference_time)
         values = json.get("intervals", [])
         for entry in reversed(values):
             latest_value = entry.get("powr", 0.0)
-            return [latest_value / 1000.0]
-        return [0.0]
+            return {"ALL" : latest_value / 1000.0}
+        return {"ALL" : 0.0}
 
     @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.cache_expire_month())

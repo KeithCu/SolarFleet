@@ -18,8 +18,10 @@ import api_keys
 # Disk cache decorator to save remote API calls.
 cache = diskcache.Cache(".")
 
-if 'collection_running' not in cache:
-    cache['collection_running'] = False
+#set this to false at startup
+#if 'collection_running' not in cache:
+cache['collection_running'] = False
+
 if 'collection_completed' not in cache:
     cache['collection_completed'] = False
 if 'collection_logs' not in cache:
@@ -85,41 +87,64 @@ def extract_vendor_code(site_id):
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str
-    production_kw: Union[float, List[float]]
+    production_kw: Dict[str, float]
 
     def __post_init__(self):
-        # Ensure production_kw is always a list of floats
+        """
+        Convert production_kw to a Dict[str, float] based on its input type.
+        - Float becomes {"ALL": float_value}
+        - List[float] becomes {"0": list[0], "1": list[1]}
+        - Dict[str, float] is validated and used as is
+        """
         if isinstance(self.production_kw, float):
-            object.__setattr__(self, 'production_kw', [self.production_kw])
-        elif not isinstance(self.production_kw, list):
-            raise TypeError("production_kw must be a float or a list of floats")
+            # Convert a single float to a dict with "ALL" as the key
+            object.__setattr__(self, 'production_kw', {"ALL": self.production_kw})
+        elif isinstance(self.production_kw, list):
+            # Convert a list of floats to a dict with numeric keys and "ALL" as the total
+            if not all(isinstance(item, float) for item in self.production_kw):
+                raise TypeError("production_kw list must contain only floats")
+            production_dict = {str(i): val for i, val in enumerate(self.production_kw)}
+            object.__setattr__(self, 'production_kw', production_dict)
+        elif isinstance(self.production_kw, dict):
+            # Validate that the dict has string keys and float values
+            if not all(isinstance(k, str) and isinstance(v, float) for k, v in self.production_kw.items()):
+                raise TypeError("production_kw dict must have string keys and float values")
+            # Use the dictionary as is (no need to modify since class is frozen)
         else:
-            for item in self.production_kw:
-                if not isinstance(item, float):
-                    raise TypeError("production_kw list must contain only floats")
+            raise TypeError("production_kw must be a float, a list of floats, or a dict of str to float")
 
     def __setstate__(self, state):
+        """Handle deserialization by setting state and re-running post-init."""
         object.__setattr__(self, '__dict__', state)
         self.__post_init__()
 
     def __hash__(self):
-        # Include production_kw in the hash (convert list to tuple)
-        return hash((self.site_id, tuple(self.production_kw)))
+        """Hash based on site_id and production_kw dictionary items."""
+        return hash((self.site_id, frozenset(self.production_kw.items())))
 
     def __eq__(self, other):
+        """Compare two ProductionRecord instances for equality."""
         if not isinstance(other, ProductionRecord):
             return NotImplemented
-        return (self.site_id, tuple(self.production_kw)) == (other.site_id, tuple(other.production_kw))
-
+        return self.site_id == other.site_id and self.production_kw == other.production_kw
 
 def calculate_production_kw(item):
-    if isinstance(item, list):
-        return sum(item)
-    elif isinstance(item, (int, float)) and not np.isnan(item):
-        return item
+    if isinstance(item, dict):
+        # Sum all values in the dictionary, treating NaN as 0.0
+        return sum(0.0 if math.isnan(v) else v for v in item.values())
+    elif isinstance(item, list):
+        # Sum all elements in the list, treating NaN as 0.0
+        return sum(0.0 if math.isnan(x) else x for x in item)
+    elif isinstance(item, (int, float)):
+        # For single numeric values, return the value if not NaN, else 0.0
+        if isinstance(item, float) and math.isnan(item):
+            return 0.0
+        else:
+            return item
     else:
+        # For any other type, return 0.0
         return 0.0
-
+    
 def get_now():
     return datetime.now(ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE)))
     
@@ -138,8 +163,8 @@ class SolarPlatform(ABC):
 
     @classmethod
     @abstractmethod
-    # returns a list of production for each inverter on site
-    def get_production(cls, site_id, reference_time) -> List[float]:
+    # returns a dict of inverters to their current production (or ALL if micros)
+    def get_production(cls, site_id, reference_time) -> Dict[str, float]:
         pass
 
     @classmethod
