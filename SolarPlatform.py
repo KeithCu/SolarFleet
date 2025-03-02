@@ -78,6 +78,11 @@ def extract_vendor_code(site_id):
     else:
         raise ValueError(f"Invalid site_id: {site_id}. Expected a vendor code prefix + :")
 
+def has_low_production(production):
+    if isinstance(production, dict):
+        return any(np.isnan(value) or value < 0.1 for value in production.values())
+    return True
+
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str
