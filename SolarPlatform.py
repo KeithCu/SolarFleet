@@ -1,5 +1,6 @@
 import random
 from typing import List, Dict, Union
+from enum import Enum
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from zoneinfo import ZoneInfo
@@ -10,7 +11,6 @@ import pprint
 import keyring
 import diskcache
 import pgeocode
-import numpy as np
 import streamlit as st
 
 import api_keys
@@ -77,12 +77,42 @@ def extract_vendor_code(site_id):
         return site_id.split(':', 1)[0]
     else:
         raise ValueError(f"Invalid site_id: {site_id}. Expected a vendor code prefix + :")
+    
+@dataclass(frozen=True)
+class ProductionStatus(Enum):
+    GOOD = "good"
+    ISSUE = "issue"
+    NOT_PRODUCING = "not_producing" # Gray, snowy day
 
-def has_low_production(production):
-    if isinstance(production, dict):
-        return any(np.isnan(value) or value < 0.1 for value in production.values())
-    return True
+def has_low_production(production_kw, fleet_avg, fleet_std):
+    cloudy_production = 0.5  # If fleet average is below 0.5 kW / site, it's cloudy/snowy
 
+    # Step 1: Calculate total production based on input type
+    if isinstance(production_kw, (dict, list)):
+        values = list(production_kw.values()) if isinstance(production_kw, dict) else production_kw
+        total = sum(0.0 if v is None or math.isnan(v) else v for v in values)
+    else:
+        total = 0.0 if production_kw is None or math.isnan(production_kw) else production_kw
+
+    # Step 2: Apply logic based on whether fleet_avg is None
+    if fleet_avg is None:
+        # Simple check: less than 100 watts (0.1 kW) is bad
+        if total < 0.1:
+            return ProductionStatus.ISSUE
+        return ProductionStatus.GOOD
+    else:
+        # Fleet data available: use relative performance
+        if total < 0.1:
+            if fleet_avg < cloudy_production:
+                return ProductionStatus.NOT_PRODUCING  # Likely weather-related
+            else:
+                return ProductionStatus.ISSUE          # Site-specific issue
+        else:
+            lower_threshold = fleet_avg - fleet_std
+            if total < lower_threshold:
+                return ProductionStatus.ISSUE          # Below fleet performance
+            return ProductionStatus.GOOD
+        
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str
