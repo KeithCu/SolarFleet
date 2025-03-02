@@ -196,7 +196,7 @@ def main():
         existing_alert_sites = set(alerts_df['site_id'].unique())
         synthetic_alerts = []
         for record in production_set:
-            if SolarPlatform.has_low_production(record.production_kw) and record.site_id not in existing_alert_sites:
+            if SolarPlatform.has_low_production(record.production_kw, None, None) and record.site_id not in existing_alert_sites:
                 synthetic_alert = SolarPlatform.SolarAlert(
                     site_id=record.site_id,
                     alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
@@ -241,7 +241,11 @@ def main():
             site_df['production_kw_total'] = site_df['production_kw'].apply(SolarPlatform.calculate_production_kw)
             site_df['production_kw'] = site_df['production_kw'].round(2)
 
-            ui.create_map_view(site_df)
+            fleet_avg = site_df['production_kw_total'].mean()
+            fleet_std = site_df['production_kw_total'].std()
+
+            # Add a checkbox to toggle tooltips
+            ui.create_map_view(site_df, fleet_avg, fleet_std)
             st.markdown("---")
 
             if SolarPlatform.FAKE_DATA:
@@ -263,3 +267,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    

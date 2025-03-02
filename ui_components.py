@@ -4,6 +4,7 @@ import folium
 import altair as alt
 import streamlit as st
 from streamlit_folium import folium_static as st_folium
+from folium.plugins import HeatMap
 
 
 import Database as db
@@ -85,6 +86,10 @@ def create_map_view(sites_df, fleet_avg, fleet_std):
     # Create a list to collect marker coordinates
     marker_coords = []
 
+    # heat_data = [[row['latitude'], row['longitude'], row['production_kw_total'] or 0] 
+    #              for _, row in sites_df.iterrows()]
+    # HeatMap(heat_data, radius=15, blur=20, max_zoom=1).add_to(m)
+
     # Define an approximate bounding box for Michigan.
     MIN_LAT, MAX_LAT = 41.7, 48.3
     MIN_LON, MAX_LON = -90, -82
@@ -102,16 +107,6 @@ def create_map_view(sites_df, fleet_avg, fleet_std):
 
         marker_coords.append([lat, lon])
 
-        status = SolarPlatform.has_low_production(row['production_kw'], fleet_avg, fleet_std)
-    
-        # Equals doesn't work, only is
-        if status is SolarPlatform.ProductionStatus.GOOD:
-            color = '#228B22'  # Green
-        elif status is SolarPlatform.ProductionStatus.ISSUE:
-            color = '#FF0000'  # Red
-        elif status is SolarPlatform.ProductionStatus.NOT_PRODUCING:
-            color = '#808080'  # Gray
-
         production_data = row["production_kw"] # Get production_kw for the current row
 
         # Format production_kw for the tooltip
@@ -125,26 +120,44 @@ def create_map_view(sites_df, fleet_avg, fleet_std):
 
         total_production = SolarPlatform.calculate_production_kw(production_data)
 
-        folium.Marker(
-            location=[lat, lon],
-            popup=folium.Popup(popup_html, max_width=300),
-            icon=folium.DivIcon(
-                html=f"""
-                    <div style="
-                        background-color: {color};
-                        border-radius: 50%;
-                        width: 30px;
-                        height: 30px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        color: white;
-                        border: 2px solid #fff;
-                        font-weight: bold;">
-                        {total_production:.2f}
-                    </div>
-                """
-            )
+
+        status = SolarPlatform.has_low_production(row['production_kw'], fleet_avg, fleet_std)
+    
+        animation = ''
+        if status is SolarPlatform.ProductionStatus.NOT_PRODUCING:
+            color = '#808080'
+        elif status is SolarPlatform.ProductionStatus.ISSUE:
+            color = '#FF0000'  # Red for issues
+            animation = 'animation: pulse 1s infinite;'  # Pulsing effect
+        else:  # GOOD status
+            # Gradient from red (low) to green (high) based on production
+            ratio = total_production / fleet_avg
+            hue = min(120 * ratio, 120)  # 0 (red) to 120 (green)
+            color = f'hsl({hue}, 100%, 50%)'
+
+        html = f"""
+        <style>
+            @keyframes pulse {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.2); }} 100% {{ transform: scale(1); }} }}
+        </style>
+        <div style="
+            background-color: {color};
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            {animation}
+        ">{total_production:.2f}</div>
+        """
+
+        popup = folium.Popup(tooltip_content)
+
+        folium.Marker(location=[row['latitude'], row['longitude']],
+            popup=popup, icon=folium.DivIcon(html=html)
         ).add_to(m)
 
     if marker_coords:
