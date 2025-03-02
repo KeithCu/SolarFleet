@@ -76,7 +76,7 @@ def display_production_chart(site_df):
 
     st.altair_chart(chart, use_container_width=True)
 
-def create_map_view(sites_df):
+def create_map_view(sites_df, fleet_avg, fleet_std):
     # Center the map at the average location of all sites (initially)
     avg_lat = sites_df['latitude'].mean()
     avg_lon = sites_df['longitude'].mean()
@@ -102,11 +102,15 @@ def create_map_view(sites_df):
 
         marker_coords.append([lat, lon])
 
-        # Check if any inverter is below the threshold
-        if SolarPlatform.has_low_production(row["production_kw"]):
-            color = "#FF0000"
-        else:
-            color = "#228B22"
+        status = SolarPlatform.has_low_production(row['production_kw'], fleet_avg, fleet_std)
+    
+        # Equals doesn't work, only is
+        if status is SolarPlatform.ProductionStatus.GOOD:
+            color = '#228B22'  # Green
+        elif status is SolarPlatform.ProductionStatus.ISSUE:
+            color = '#FF0000'  # Red
+        elif status is SolarPlatform.ProductionStatus.NOT_PRODUCING:
+            color = '#808080'  # Gray
 
         production_data = row["production_kw"] # Get production_kw for the current row
 
