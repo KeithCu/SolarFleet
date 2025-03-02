@@ -1,14 +1,15 @@
-import aiohttp
+import requests
 import async_timeout
 import asyncio
 import time
+
+import aiohttp
 import json
 import hmac
 import hashlib
 from datetime import datetime, timedelta
 from typing import Dict, List
 
-import requests
 
 import SolarPlatform
 
@@ -27,7 +28,7 @@ SOLIS_SITE_URL = "https://soliscloud.example.com/station/"
 class SolisCloudAPIError(Exception):
     pass
 
-class SolisCloudPlatform(SolarPlatform.SolarPlatform):
+class SolisPlatform(SolarPlatform.SolarPlatform):
     _session: aiohttp.ClientSession = None
 
     @classmethod
@@ -110,7 +111,7 @@ class SolisCloudPlatform(SolarPlatform.SolarPlatform):
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR)
     def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         # Fetch station list from the Solis API and map each station to a SiteInfo object.
-        raw_data = cls.get_user_station_list(page_no=1, page_size=100)
+        raw_data = cls.get_user_station_list(page_size=100)
         processed = cls.process_station_data(raw_data)
         stations_list = processed.get("stations", [])
         sites_dict = {}
@@ -207,8 +208,8 @@ class SolisCloudPlatform(SolarPlatform.SolarPlatform):
 if __name__ == "__main__":
     try:
         # Get and display station list
-        raw_stations = SolisCloudPlatform.get_user_station_list(page_no=1, page_size=100)
-        stations = SolisCloudPlatform.process_station_data(raw_stations)
+        raw_stations = SolisPlatform.get_user_station_list(page_no=1, page_size=100)
+        stations = SolisPlatform.process_station_data(raw_stations)
         print("User Station List:")
         print(json.dumps(stations, indent=2))
 
@@ -216,4 +217,4 @@ if __name__ == "__main__":
     except Exception as e:
         print("Error during API call:", e)
     finally:
-        asyncio.run(SolisCloudPlatform.close_session())
+        asyncio.run(SolisPlatform.close_session())
