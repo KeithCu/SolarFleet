@@ -102,15 +102,18 @@ def create_map_view(sites_df, fleet_avg, fleet_std):
 
         marker_coords.append([lat, lon])
 
-        status = SolarPlatform.has_low_production(row['production_kw'], fleet_avg, fleet_std)
-    
-        # Equals doesn't work, only is
-        if status is SolarPlatform.ProductionStatus.GOOD:
-            color = '#228B22'  # Green
-        elif status is SolarPlatform.ProductionStatus.ISSUE:
-            color = '#FF0000'  # Red
-        elif status is SolarPlatform.ProductionStatus.NOT_PRODUCING:
-            color = '#808080'  # Gray
+        if row.get('is_offline', False):
+            color = '#7393B3'
+        else:
+            status = SolarPlatform.has_low_production(row['production_kw'], fleet_avg, fleet_std)
+        
+            # FIXME: Equals doesn't work, only is
+            if status is SolarPlatform.ProductionStatus.GOOD:
+                color = '#228B22'  # Green
+            elif status is SolarPlatform.ProductionStatus.ISSUE:
+                color = '#FF0000'  # Red
+            elif status is SolarPlatform.ProductionStatus.NOT_PRODUCING:
+                color = '#c9c9c9'  # Gray
 
         production_data = row["production_kw"] # Get production_kw for the current row
 

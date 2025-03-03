@@ -245,6 +245,9 @@ def main():
             fleet_avg = site_df['production_kw_total'].mean()
             fleet_std = site_df['production_kw_total'].std()
 
+            offline_sites = alerts_df[alerts_df['alert_type'] == 'NO_COMMUNICATION']['site_id'].unique()
+            site_df['is_offline'] = site_df['site_id'].isin(offline_sites)
+
             ui.create_map_view(site_df, fleet_avg, fleet_std)
             st.markdown("---")
 
