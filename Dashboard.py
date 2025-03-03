@@ -1,7 +1,6 @@
 from datetime import datetime
 from dataclasses import asdict
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -196,7 +195,7 @@ def main():
         existing_alert_sites = set(alerts_df['site_id'].unique())
         synthetic_alerts = []
         for record in production_set:
-            if SolarPlatform.has_low_production(record.production_kw, None, None) and record.site_id not in existing_alert_sites:
+            if SolarPlatform.has_low_production(record.production_kw, None, None) is SolarPlatform.ProductionStatus.ISSUE and record.site_id not in existing_alert_sites:
                 synthetic_alert = SolarPlatform.SolarAlert(
                     site_id=record.site_id,
                     alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
