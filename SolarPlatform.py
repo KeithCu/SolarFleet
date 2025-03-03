@@ -82,37 +82,45 @@ def extract_vendor_code(site_id):
 class ProductionStatus(Enum):
     GOOD = "good"
     ISSUE = "issue"
-    NOT_PRODUCING = "not_producing" # Gray, snowy day
+    SNOWY = "snowy" # Cloudy or snowy day
 
 def has_low_production(production_kw, fleet_avg, fleet_std):
     cloudy_production = 0.5  # If fleet average is below 0.5 kW / site, it's cloudy/snowy
 
-    # Step 1: Calculate total production based on input type
     if isinstance(production_kw, (dict, list)):
         values = list(production_kw.values()) if isinstance(production_kw, dict) else production_kw
         total = sum(0.0 if v is None or math.isnan(v) else v for v in values)
     else:
         total = 0.0 if production_kw is None or math.isnan(production_kw) else production_kw
 
-    # Step 2: Apply logic based on whether fleet_avg is None
     if fleet_avg is None:
-        # Simple check: less than 100 watts (0.1 kW) is bad
         if total < 0.1:
             return ProductionStatus.ISSUE
+        
+        if isinstance(production_kw, (dict, list)):
+            values = list(production_kw.values()) if isinstance(production_kw, dict) else production_kw
+            if any(v is None or math.isnan(v) or v < 0.1 for v in values):
+                return ProductionStatus.ISSUE
+
         return ProductionStatus.GOOD
     else:
         # Fleet data available: use relative performance
         if total < 0.1:
             if fleet_avg < cloudy_production:
-                return ProductionStatus.NOT_PRODUCING  # Likely weather-related
+                return ProductionStatus.SNOWY
             else:
-                return ProductionStatus.ISSUE          # Site-specific issue
+                return ProductionStatus.ISSUE
         else:
             lower_threshold = fleet_avg - fleet_std
             if total < lower_threshold:
-                return ProductionStatus.ISSUE          # Below fleet performance
+                return ProductionStatus.ISSUE
+            # Check individual inverters when not snowy
+            if fleet_avg >= cloudy_production and isinstance(production_kw, (dict, list)):
+                values = list(production_kw.values()) if isinstance(production_kw, dict) else production_kw
+                if any(v is None or math.isnan(v) or v < 0.1 for v in values):
+                    return ProductionStatus.ISSUE
             return ProductionStatus.GOOD
-        
+                
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str

@@ -103,7 +103,7 @@ def create_map_view(sites_df, fleet_avg, fleet_std):
         marker_coords.append([lat, lon])
 
         if row.get('is_offline', False):
-            color = '#7393B3'
+            color = 'blue'
         else:
             status = SolarPlatform.has_low_production(row['production_kw'], fleet_avg, fleet_std)
         
@@ -112,7 +112,7 @@ def create_map_view(sites_df, fleet_avg, fleet_std):
                 color = '#228B22'  # Green
             elif status is SolarPlatform.ProductionStatus.ISSUE:
                 color = '#FF0000'  # Red
-            elif status is SolarPlatform.ProductionStatus.NOT_PRODUCING:
+            elif status is SolarPlatform.ProductionStatus.SNOWY:
                 color = '#c9c9c9'  # Gray
 
         production_data = row["production_kw"] # Get production_kw for the current row
