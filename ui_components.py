@@ -214,94 +214,84 @@ def display_battery_section(site_df):
                 disabled=True
             )
 
-            
-def process_alert_section(df, header_title, editor_key, save_button_label, column_config, drop_columns=None, alert_type=None, use_container_width=True):
+def process_alert_section(df, header_title, editor_key, column_config, alert_type=None, use_container_width=True):
     st.header(header_title)
+    
     if alert_type is not None:
         section_df = df[df['alert_type'] == alert_type].copy()
     else:
         section_df = df.copy()
-
-    if drop_columns:
-        section_df.drop(columns=drop_columns, inplace=True)
-
+    
+    original_key = f"original_{editor_key}"
+    
+    if original_key not in st.session_state:
+        st.session_state[original_key] = section_df.copy()
+    
     edited_df = st.data_editor(
-        section_df,
+        data=st.session_state[original_key],
         key=editor_key,
         use_container_width=use_container_width,
         column_config=column_config
     )
-    if st.button(save_button_label, key=editor_key + "_save"):
-        for _, row in edited_df.iterrows():
+    
+    changed_rows = edited_df[edited_df['history'] != st.session_state[original_key]['history']]
+    
+    if not changed_rows.empty:
+        for _, row in changed_rows.iterrows():
             db.update_site_history(row['site_id'], row['history'])
-    if alert_type is not None:
-        df = df[df['alert_type'] != alert_type]
-    return df
+        st.session_state[original_key]['history'] = edited_df['history'].copy()
+        st.success(f"Changes saved for {header_title}")
 
 def create_alert_section(site_df, alerts_df, sites_history_df):
-
-    # Merge alerts_df with site_df to add 'name' and 'url'
     alerts_df = alerts_df.merge(site_df[['site_id', 'name', 'url']], on="site_id", how="left")
-
-    alerts_df = alerts_df.drop(columns=["history"], errors="ignore")
-
-    #Reorder columns
-    alerts_df = alerts_df[['site_id', 'name', 'url'] + [col for col in alerts_df.columns if col not in ['site_id', 'name', 'url']]]
-
-    if SolarPlatform.FAKE_DATA:
-        alerts_df["site_id"] = alerts_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_site_id())        
-        alerts_df["name"] = alerts_df["site_id"].apply(lambda x: SolarPlatform.generate_fake_address())
-
-    # Merge site history once for all alerts
-    merged_alerts_df = alerts_df.merge(
-        sites_history_df, on="site_id", how="left")
-
-    merged_alerts_df = process_alert_section(
-        merged_alerts_df,
-        header_title="Site Production failure",
-        alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,
-        editor_key="production_production",
-        save_button_label="Save Production Site History Updates",
-        column_config={
-            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-        },
-        drop_columns=["alert_type", "details", "resolved_date"],
-    )
-
-    merged_alerts_df = process_alert_section(
-        merged_alerts_df,
-        header_title="Site Communication failure",
-        alert_type=SolarPlatform.AlertType.NO_COMMUNICATION,
-        editor_key="comms_editor",
-        save_button_label="Save Communication Site History Updates",
-        column_config={
-            "url": st.column_config.LinkColumn(label="Site url", display_text="Link"),
-            "history": st.column_config.TextColumn(label="History                                                                                                     X")
-        },
-        drop_columns=["alert_type", "details", "severity"],
-        use_container_width=False
-    )
-
-    merged_alerts_df = process_alert_section(
-        merged_alerts_df,
-        header_title="Panel-level failures",
-        alert_type= SolarPlatform.AlertType.PANEL_ERROR,
-        editor_key="panel_editor",
-        save_button_label="Save Panel Site History Updates",
-        column_config={
-            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-        },
-        drop_columns=["alert_type", "details"],
-    )
-
+    merged_alerts_df = alerts_df.merge(sites_history_df, on="site_id", how="left")
+        
+    merged_alerts_df = merged_alerts_df[
+        ['site_id', 'name', 'url'] + 
+        [col for col in merged_alerts_df.columns if col not in ['site_id', 'name', 'url']]
+    ]
+    
+    column_config = {
+        "url": st.column_config.LinkColumn(label="Site url", display_text="Link"),
+        "history": st.column_config.TextColumn(label="History")
+    }
+    
     process_alert_section(
-        merged_alerts_df,
+        df=merged_alerts_df,
+        header_title="Site Production failure",
+        editor_key="production_editor",
+        column_config=column_config,
+        alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR
+    )
+    
+    process_alert_section(
+        df=merged_alerts_df,
+        header_title="Site Communication failure",
+        editor_key="comms_editor",
+        column_config=column_config,
+        alert_type=SolarPlatform.AlertType.NO_COMMUNICATION
+    )
+    
+    process_alert_section(
+        df=merged_alerts_df,
+        header_title="Panel-level failures",
+        editor_key="panel_editor",
+        column_config=column_config,
+        alert_type=SolarPlatform.AlertType.PANEL_ERROR
+    )
+    
+    excluded_alert_types = [
+        SolarPlatform.AlertType.PRODUCTION_ERROR,
+        SolarPlatform.AlertType.NO_COMMUNICATION,
+        SolarPlatform.AlertType.PANEL_ERROR
+    ]
+    
+    config_failure_df = merged_alerts_df[~merged_alerts_df['alert_type'].isin(excluded_alert_types)]
+    
+    process_alert_section(
+        df=config_failure_df,
         header_title="System Configuration failure",
         editor_key="sysconf_editor",
-        save_button_label="Save System Config Site History Updates",
-        column_config={
-            "url": st.column_config.LinkColumn(label="Site url", display_text="Link")
-        },
-        drop_columns=["alert_type"],
+        column_config=column_config,
         alert_type=None
     )
