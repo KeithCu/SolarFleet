@@ -219,9 +219,13 @@ def process_alert_section(df, header_title, editor_key, column_config, alert_typ
     
     if alert_type is not None:
         section_df = df[df['alert_type'] == alert_type].copy()
+        section_df = section_df.drop(columns=['details'])
     else:
         section_df = df.copy()
     
+    #drop alert_type section
+    section_df = section_df.drop(columns=['alert_type'])
+
     original_key = f"original_{editor_key}"
     
     if original_key not in st.session_state:
