@@ -226,6 +226,11 @@ def process_alert_section(df, header_title, editor_key, column_config, alert_typ
     #drop alert_type section
     section_df = section_df.drop(columns=['alert_type'])
 
+
+    section_df['first_triggered'] = pd.to_datetime(section_df['first_triggered'], utc=True)
+    section_df['first_triggered'] = pd.to_datetime(section_df['first_triggered']).dt.date
+    section_df = section_df.sort_values('first_triggered', ascending=False)
+
     original_key = f"original_{editor_key}"
     
     if original_key not in st.session_state:
