@@ -197,6 +197,19 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             return []
 
     @classmethod
+    def delete_device_cache(cls, raw_system_id):
+        """Delete the cached device data (batteries and inverters) for a specific Enphase system."""
+        func = cls.get_site_devices
+        args = (cls, raw_system_id)
+        kwargs = {}
+        cache_key = f"{func.__name__}_{args}_{kwargs}"
+        if cache_key in SolarPlatform.cache:
+            del SolarPlatform.cache[cache_key]
+            cls.log(f"Deleted cache for get_site_devices for system {raw_system_id}")
+        else:
+            cls.log(f"No cache found for get_site_devices for system {raw_system_id}")
+
+    @classmethod
     @SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_WEEK)
     def get_site_energy(cls, site_id, start_date, end_date):
         pass

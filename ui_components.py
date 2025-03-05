@@ -250,6 +250,7 @@ def process_alert_section(df, header_title, editor_key, column_config, alert_typ
             db.update_site_history(row['site_id'], row['history'])
         st.session_state[original_key]['history'] = edited_df['history'].copy()
         st.success(f"Changes saved for {header_title}")
+        st.rerun()
 
 def create_alert_section(site_df, alerts_df, sites_history_df):
     alerts_df = alerts_df.merge(site_df[['site_id', 'name', 'url']], on="site_id", how="left")

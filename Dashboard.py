@@ -71,7 +71,7 @@ def main():
 
         sites.update(sites_enphase)
 
-        tab_content, tab_settings, tab_logs, tab_production, tab_users = st.tabs(["Content ", "Settings", "Logs", "Production History", "Users"])
+        tab_content, tab_settings, tab_cache, tab_logs, tab_production, tab_users = st.tabs(["Content ", "Settings", "Cache", "Logs", "Production History", "Users"])
         with tab_content:
             st.metric("Active Sites In Fleet", len(sites))
             st.metric("Active Batteries", db.fetch_battery_count())
@@ -86,6 +86,48 @@ def main():
                     index=all_timezones.index(current_timezone) if current_timezone in all_timezones else 0 # Default to first if default_timezone not found
                 )
                 SolarPlatform.cache.add("TimeZone", selected_timezone_str)
+
+            st.subheader("Ignored Sites")
+            ignored_sites = db.get_ignored_sites()
+
+            for site_id in ignored_sites:
+                col1, col2 = st.columns([3, 1])
+                col1.write(site_id)
+                if col2.button("Remove", key=f"remove_{site_id}"):
+                    db.remove_ignored_site(site_id)
+                    st.rerun()
+
+            site_id_to_ignore = st.text_input("Enter site_id to ignore (e.g., SE:12345)", key="ignore_site_id")
+            if st.button("Add to Ignored"):
+                if site_id_to_ignore:
+                    db.add_ignored_site(site_id_to_ignore)
+                    st.rerun()
+
+
+        with tab_cache:
+            st.subheader("Refresh Device Data Cache")
+            site_id_to_refresh = st.text_input("Enter site_id to refresh device data (e.g., SE:12345 or EN:67890)")
+            if st.button("Refresh Cache"):
+                if site_id_to_refresh:
+                    try:
+                        vendor_code = SolarPlatform.extract_vendor_code(site_id_to_refresh)
+                        raw_site_id = SolarPlatform.SolarPlatform.strip_vendorcodeprefix(site_id_to_refresh)
+                        if vendor_code == "SE":
+                            platform = SolarEdgePlatform()  # Instantiate temporarily
+                            platform.delete_device_cache(raw_site_id)
+                            st.success(f"Cache refreshed for SolarEdge site {raw_site_id}. Next collection will fetch fresh data.")
+                        elif vendor_code == "EN":
+                            platform = EnphasePlatform()  # Instantiate temporarily
+                            platform.delete_device_cache(raw_site_id)
+                            st.success(f"Cache refreshed for Enphase system {raw_site_id}. Next collection will fetch fresh data.")
+                        else:
+                            st.error(f"Unknown vendor code: {vendor_code}")
+                    except ValueError as e:
+                        st.error(f"Invalid site_id: {str(e)}")
+                else:
+                    st.warning("Please enter a site_id")
+
+
             if st.button("Delete Alerts (Test)"):
                 db.delete_all_alerts()
                 st.success("All alerts deleted!")

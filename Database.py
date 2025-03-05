@@ -1,9 +1,7 @@
 from datetime import datetime, date
 from typing import List, Tuple
-
-import numpy as np
+import json
 import pandas as pd
-from sklearn.neighbors import BallTree
 from sqlalchemy.orm.attributes import flag_modified
 
 import SqlModels as Sql
@@ -247,3 +245,34 @@ def process_bulk_solar_production(
     insert_or_update_production_set(production_data, reference_date)
 
     print(f"Processed {len(production_data)} records. Average production: {avg_prod:.2f}")
+
+
+def set_config(key: str, value: any):
+    with Sql.SessionLocal() as session:
+        config = session.query(Sql.Configuration).filter(Sql.Configuration.key == key).first()
+        if config:
+            config.value = json.dumps(value)
+        else:
+            config = Sql.Configuration(key=key, value=json.dumps(value))
+            session.add(config)
+        session.commit()
+
+def get_config(key: str, default: any = None) -> any:
+    with Sql.SessionLocal() as session:
+        config = session.query(Sql.Configuration).filter(Sql.Configuration.key == key).first()
+        return json.loads(config.value) if config else default
+
+def add_ignored_site(site_id: str):
+    ignored_sites = get_ignored_sites()
+    if site_id not in ignored_sites:
+        ignored_sites.append(site_id)
+        set_config("ignored_sites", ignored_sites)
+
+def remove_ignored_site(site_id: str):
+    ignored_sites = get_ignored_sites()
+    if site_id in ignored_sites:
+        ignored_sites.remove(site_id)
+        set_config("ignored_sites", ignored_sites)
+
+def get_ignored_sites() -> list:
+    return get_config("ignored_sites", default=[])  # Default to empty list if not set

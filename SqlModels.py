@@ -9,8 +9,13 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 
 #
-# # Define tables
+# Define tables
+#
 
+class Configuration(Base):
+    __tablename__ = "configuration"
+    key = Column(String, primary_key=True)
+    value = Column(String)  # JSON
 
 class Site(Base):
     __tablename__ = "sites"
