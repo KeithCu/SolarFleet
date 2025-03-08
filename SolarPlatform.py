@@ -280,7 +280,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.asin(math.sqrt(a))
     return c * 3958.8  # Earth radius in miles
 
-#@st.cache_data
+@st.cache_data
 def get_coordinates(zip_code):
     try:
         result = nomi.query_postal_code(zip_code)
@@ -299,8 +299,8 @@ def get_coordinates(zip_code):
         lat, lon = 42.5, -83.1
     
     # Add small random offset to latitude and longitude
-    offset_lat = random.uniform(-0.100, 0.100)
-    offset_lon = random.uniform(-0.100, 0.100)
+    offset_lat = 0 # random.uniform(-0.100, 0.100)
+    offset_lon = 0 # random.uniform(-0.100, 0.100)
     return lat + offset_lat, lon + offset_lon
 
 

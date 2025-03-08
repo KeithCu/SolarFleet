@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import pandas as pd
 import folium
@@ -77,79 +78,86 @@ def display_production_chart(site_df):
     st.altair_chart(chart, use_container_width=True)
 
 def create_map_view(sites_df, fleet_avg, fleet_std):
-    # Center the map at the average location of all sites (initially)
+    # Center the map at the average location of all sites
     avg_lat = sites_df['latitude'].mean()
     avg_lon = sites_df['longitude'].mean()
     m = folium.Map(location=[avg_lat, avg_lon], zoom_start=5, width='100%')
 
-    # Create a list to collect marker coordinates
-    marker_coords = []
-
-    # Define an approximate bounding box for Michigan.
+    # Define an approximate bounding box for Michigan
     MIN_LAT, MAX_LAT = 41.7, 48.3
     MIN_LON, MAX_LON = -90, -82
 
-    # Iterate over the DataFrame and add markers
-    for _, row in sites_df.iterrows():
-        lat = row['latitude']
-        lon = row['longitude']
+    marker_coords = []  # List to collect all marker coordinates for fitting the map
 
-        # Sanity check: ignore if lat/lon is NaN or outside Michigan's bounding box.
-        if np.isnan(lat) or np.isnan(lon) or lat < MIN_LAT or lat > MAX_LAT or lon < MIN_LON or lon > MAX_LON:
-            print(
-                f"Skipping marker for {row.get('site_id')} - {row.get('name')}: coordinates ({lat}, {lon}) out of bounds")
+    # Group sites by (latitude, longitude) since same zip code means same coordinates
+    for (lat, lon), group in sites_df.groupby(['latitude', 'longitude']):
+        if pd.isna(lat) or pd.isna(lon) or lat < MIN_LAT or lat > MAX_LAT or lon < MIN_LON or lon > MAX_LON:
+            print(f"Skipping markers for zipcode: {group['zipcode'].iloc[0]} - coordinates ({lat}, {lon}) out of bounds")
             continue
 
-        marker_coords.append([lat, lon])
-
-        if row.get('is_offline', False):
-            color = 'blue'
+        N = len(group)  # Number of sites at this zip code
+        if N == 1:
+            # Single site: place marker at the center
+            positions = [(lat, lon)]
         else:
-            status = SolarPlatform.has_low_production(row['production_kw'], fleet_avg, fleet_std)
-        
-            # FIXME: Equals doesn't work, only is
-            if status is SolarPlatform.ProductionStatus.GOOD:
-                color = '#228B22'  # Green
-            elif status is SolarPlatform.ProductionStatus.ISSUE:
-                color = '#FF0000'  # Red
-            elif status is SolarPlatform.ProductionStatus.SNOWY:
-                color = '#c9c9c9'  # Gray
+            # Multiple sites: place markers in a circle with radius scaled by sqrt(N)
+            base_radius = 0.002  # Base radius in degrees (~222 meters at latitude)
+            R = base_radius * math.sqrt(N)  # Radius increases with square root of N for more space
+            positions = []
+            for i in range(N):
+                theta = 360 * i / N  # Angle in degrees, evenly spaced
+                offset_lat = R * math.cos(math.radians(theta))
+                offset_lon = R * math.sin(math.radians(theta))
+                positions.append((lat + offset_lat, lon + offset_lon))
 
-        production_data = row["production_kw"] # Get production_kw for the current row
+        # Add markers for each site in the group
+        for i, (_, row) in enumerate(group.iterrows()):
+            marker_lat, marker_lon = positions[i]
+            marker_coords.append([marker_lat, marker_lon])
 
-        # Format production_kw for the tooltip
-        tooltip_content = format_production_tooltip(production_data)
+            # Determine marker color based on status
+            if row.get('is_offline', False):
+                color = 'blue'
+            else:
+                status = SolarPlatform.has_low_production(row['production_kw'], fleet_avg, fleet_std)
+                if status is SolarPlatform.ProductionStatus.GOOD:
+                    color = '#228B22'  # Green
+                elif status is SolarPlatform.ProductionStatus.ISSUE:
+                    color = '#FF0000'  # Red
+                elif status is SolarPlatform.ProductionStatus.SNOWY:
+                    color = '#c9c9c9'  # Gray
 
-        # Display the list of production values in the popup
-        popup_html = (
-            f"<strong>{row['name']} ({row['site_id']})</strong><br>"
-            f"Production: {tooltip_content}"
-        )
+            production_data = row["production_kw"]
+            tooltip_content = format_production_tooltip(production_data)
+            total_production = SolarPlatform.calculate_production_kw(production_data)
 
-        total_production = SolarPlatform.calculate_production_kw(production_data)
+            # Add the marker to the map
+            folium.Marker(
+                location=[marker_lat, marker_lon],
+                popup=folium.Popup(
+                    f"<strong>{row['name']} ({row['site_id']})</strong><br>Production: {tooltip_content}",
+                    max_width=300
+                ),
+                icon=folium.DivIcon(
+                    html=f"""
+                        <div style="
+                            background-color: {color};
+                            border-radius: 50%;
+                            width: 30px;
+                            height: 30px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            color: white;
+                            border: 2px solid #fff;
+                            font-weight: bold;">
+                            {total_production:.2f}
+                        </div>
+                    """
+                )
+            ).add_to(m)
 
-        folium.Marker(
-            location=[lat, lon],
-            popup=folium.Popup(popup_html, max_width=300),
-            icon=folium.DivIcon(
-                html=f"""
-                    <div style="
-                        background-color: {color};
-                        border-radius: 50%;
-                        width: 30px;
-                        height: 30px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        color: white;
-                        border: 2px solid #fff;
-                        font-weight: bold;">
-                        {total_production:.2f}
-                    </div>
-                """
-            )
-        ).add_to(m)
-
+    # Fit the map to include all markers
     if marker_coords:
         m.fit_bounds(marker_coords)
 
