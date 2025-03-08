@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from zoneinfo import ZoneInfo
 import math
+import random
 from datetime import datetime
 import queue
 import pprint
@@ -242,6 +243,7 @@ CACHE_EXPIRE_HOUR = 3600
 CACHE_EXPIRE_DAY = CACHE_EXPIRE_HOUR * 24
 CACHE_EXPIRE_WEEK = CACHE_EXPIRE_DAY * 7
 CACHE_EXPIRE_YEAR = CACHE_EXPIRE_DAY * 365
+CACHE_EXPIRE_NEVER = CACHE_EXPIRE_YEAR * 100
 
 # Scatter monthly requests over a period of 10 days to avoid cache stampede.
 def cache_expire_month():
@@ -278,18 +280,30 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.asin(math.sqrt(a))
     return c * 3958.8  # Earth radius in miles
 
-@st.cache_data
+#@st.cache_data
 def get_coordinates(zip_code):
     try:
         result = nomi.query_postal_code(zip_code)
         if result is None or math.isnan(result.latitude) or math.isnan(result.longitude):
             print(f"Failed to get coordinates for zip code: {zip_code}")
-            result = nomi.query_postal_code(48071)
-        return result.latitude, result.longitude
+            result = nomi.query_postal_code('48071')
+            # If the fallback query also fails, use default coordinates
+            if result is None or math.isnan(result.latitude) or math.isnan(result.longitude):
+                lat, lon = 42.5, -83.1
+            else:
+                lat, lon = result.latitude, result.longitude
+        else:
+            lat, lon = result.latitude, result.longitude
     except Exception as e:
-        print(
-            f"Exception thrown trying to get coordinates for zip code: {zip_code}")
-        return 42.5, -83.1
+        print(f"Exception thrown trying to get coordinates for zip code: {zip_code}")
+        lat, lon = 42.5, -83.1
+    
+    # Add small random offset to latitude and longitude
+    offset_lat = random.uniform(-0.100, 0.100)
+    offset_lon = random.uniform(-0.100, 0.100)
+    return lat + offset_lat, lon + offset_lon
+
+
 
 def set_keyring_from_api_keys():
     """Sets API keys in the keyring based on variables in api_keys.py."""
