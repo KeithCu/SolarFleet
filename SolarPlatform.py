@@ -208,6 +208,12 @@ class SolarPlatform(ABC):
 
     @classmethod
     @abstractmethod
+    # deletes the device info cache (batteries, inverters) for a site
+    def delete_device_cache(cls, raw_site_id):
+        pass
+
+    @classmethod
+    @abstractmethod
     # returns a list of BatteryInfos for a site
     def get_batteries_soe(cls, site_id) -> List[BatteryInfo]:
         pass

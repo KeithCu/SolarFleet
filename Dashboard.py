@@ -278,10 +278,10 @@ def main():
         if not df_prod.empty and 'latitude' in site_df.columns:
             site_df["vendor_code"] = site_df["site_id"].apply(SolarPlatform.extract_vendor_code)
             site_df = site_df.merge(df_prod, on="site_id", how="left")
+            site_df = site_df.sort_values(by="site_id")
 
             site_df['production_kw_total'] = site_df['production_kw'].apply(SolarPlatform.calculate_production_kw)
             site_df['production_kw'] = site_df['production_kw'].round(2)
-
 
             fleet_avg = site_df['production_kw_total'].mean()
             fleet_std = site_df['production_kw_total'].std()
@@ -301,8 +301,40 @@ def main():
         else:
             st.info("No production data available.")
 
-        #Show all sites
-        st.dataframe(site_df)
+        site_data_tab, device_cache_tab = st.tabs(["Site Data", "Device Cache"])
+
+
+        with site_data_tab:
+            st.dataframe(site_df)
+
+        with device_cache_tab:
+            st.subheader("Manage Device Cache")
+            # Inject CSS for smaller buttons and text
+            st.markdown("""
+            <style>
+            div.stButton > button {
+              font-size: 10px;
+              padding: 0.25rem 0.5rem;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            for i in range(0, len(site_df), 2):
+                cols = st.columns(2)
+                for j, col in enumerate(cols):
+                    if i + j < len(site_df):
+                        row = site_df.iloc[i + j]
+                        if col.button(f"Delete {row['site_id']} - {row.get('name')}", key=f"delete_cache_{row['site_id']}"):
+                            vendor_code = SolarPlatform.extract_vendor_code(row['site_id'])
+                            raw_site_id = SolarPlatform.SolarPlatform.strip_vendorcodeprefix(row['site_id'])
+                            if vendor_code == "SE":
+                                platform_instance = SolarEdgePlatform()
+                            elif vendor_code == "EN":
+                                platform_instance = EnphasePlatform()
+                            else:
+                                st.error(f"Unknown vendor code: {vendor_code}")
+                                continue
+                            platform_instance.delete_device_cache(raw_site_id)
+                            st.success(f"Cache deleted for site {row['site_id']}")
 
     elif authentication_status == False:
         st.error('Username/password is incorrect')
