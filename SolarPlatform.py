@@ -1,12 +1,11 @@
 import random
 from typing import List, Dict, Union
+from datetime import datetime, time, timedelta
 from enum import Enum
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from zoneinfo import ZoneInfo
 import math
-import random
-from datetime import datetime
 import queue
 import pprint
 import keyring
@@ -185,6 +184,20 @@ def calculate_production_kw(item):
     
 def get_now():
     return datetime.now(ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE)))
+    
+def get_recent_noon() -> datetime:
+    now = get_now()
+    tz = ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE))
+    today = now.date()
+
+    threshold = datetime.combine(today, time(12, 30), tzinfo=tz)  # Threshold in specified tz
+
+    measurement_date = today if now >= threshold else today - timedelta(days=1)
+
+    noon_local = datetime.combine(measurement_date, time(12, 0), tzinfo=tz) # Noon in specified tz
+    noon_utc = noon_local.astimezone(ZoneInfo("UTC")) # Convert to UTC
+
+    return noon_utc
     
 class SolarPlatform(ABC):
     collection_queue = queue.Queue()

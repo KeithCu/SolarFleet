@@ -163,25 +163,13 @@ def save_site_yearly_production(platform, year: int, site_ids: Optional[List[str
         return output_file
     return None
 
-def get_recent_noon() -> datetime:
-    now = SolarPlatform.get_now()
-    tz = ZoneInfo(SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE))
-    today = now.date()
 
-    threshold = datetime.combine(today, time(12, 30), tzinfo=tz)  # Threshold in specified tz
-
-    measurement_date = today if now >= threshold else today - timedelta(days=1)
-
-    noon_local = datetime.combine(measurement_date, time(12, 0), tzinfo=tz) # Noon in specified tz
-    noon_utc = noon_local.astimezone(ZoneInfo("UTC")) # Convert to UTC
-
-    return noon_utc
 
 def collect_platform(platform):
     sites = None
     platform.log("Starting collection at " + str(datetime.now()))
     production_set = set()
-    reference_date = get_recent_noon()
+    reference_date = SolarPlatform.get_recent_noon()
     sites = platform.get_sites_map()
 
     try:
