@@ -12,6 +12,13 @@ import streamlit as st
 import SolarPlatform
 import Database as db
 
+# The list of all platforms to collect data from
+from SolarEdge import SolarEdgePlatform
+from Enphase import EnphasePlatform
+# from SolArk import SolArkPlatform
+# from Solis import SolisPlatform
+
+
 DUMP_DIRECTORY = "exports"
 
 def get_year_intervals(year: int) -> List[Tuple[date, date]]:
@@ -47,7 +54,6 @@ def validate_data_range(platform, site_id, energy_data, start_date, end_date):
     return True
 
 def process_energy_data(data_dict, energy_data, site_id):
-    """Process energy data into the data dictionary"""
     for item in energy_data:
         date_str = item['timestamp'].split('T')[0]
         value = item['value']
@@ -56,7 +62,6 @@ def process_energy_data(data_dict, energy_data, site_id):
         data_dict[date_str][site_id] = value
 
 def merge_site_files(file_list, output_file):
-    """Merge individual site CSV files into one combined file"""
     dataframes = []
     
     for file in file_list:
@@ -70,7 +75,6 @@ def merge_site_files(file_list, output_file):
         result.to_csv(output_file, index_label='Date')
 
 def process_single_site(platform, year: int, site_id: str, sites_map: dict) -> Optional[str]:
-    """Process a single site with retry logic and save to individual file"""
     site_name = sites_map[site_id].name if site_id in sites_map else site_id
     site_code = site_id.split(':')[1] if ':' in site_id else site_id
     prefix = platform.get_vendorcode()
@@ -137,18 +141,15 @@ def save_site_yearly_production(platform, year: int, site_ids: Optional[List[str
     else:
         file_suffix = f"{site_ids[0].split(':')[1]}_et_al" if len(site_ids) > 5 else "_".join([id.split(":")[1] for id in site_ids])
     
-    # Keep track of successfully processed sites and generated files
     successful_files = []
     all_site_files = []
     
-    # Process each site independently
     for site_id in site_ids:
         site_file = process_single_site(platform, year, site_id, sites_map)
         all_site_files.append(site_file)
         if site_file:  # None would indicate failed processing
             successful_files.append(site_file)
             
-    # Merge all successful site files into final output
     if successful_files:
         prefix = platform.get_vendorcode()
         output_file = os.path.join(DUMP_DIRECTORY, f"{prefix}_production_{year}_{file_suffix}.csv")
@@ -161,13 +162,6 @@ def save_site_yearly_production(platform, year: int, site_ids: Optional[List[str
                 
         return output_file
     return None
-
-
-# The list of all platforms to collect data from
-from SolarEdge import SolarEdgePlatform
-from Enphase import EnphasePlatform
-# from SolArk import SolArkPlatform
-# from Solis import SolisPlatform
 
 def get_recent_noon() -> datetime:
     now = SolarPlatform.get_now()
@@ -228,12 +222,10 @@ def collect_platform(platform):
         return
 
 def run_collection():
-    # Initialize the collection status
     SolarPlatform.cache['collection_running'] = True
     SolarPlatform.cache['collection_completed'] = False
     SolarPlatform.cache['collection_status'] = {}
 
-    # Start threads for each platform
     threads = []
     for platform_class in SolarPlatform.SolarPlatform.__subclasses__():
         platform_instance = platform_class()
@@ -241,15 +233,12 @@ def run_collection():
         threads.append(thread)
         thread.start()
 
-    # Process logs and wait for all threads to finish
     while any(thread.is_alive() for thread in threads):
-        # Display logs from the queue
         while not SolarPlatform.SolarPlatform.collection_queue.empty():
             log_message = SolarPlatform.SolarPlatform.collection_queue.get()
             st.write(log_message)
             SolarPlatform.SolarPlatform.collection_queue.task_done()
         pytime.sleep(0.1)  # Small sleep to prevent tight loop
 
-    # All threads are done
     SolarPlatform.cache['collection_running'] = False
     SolarPlatform.cache['collection_completed'] = True
