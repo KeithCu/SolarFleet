@@ -139,10 +139,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     @classmethod
     def delete_device_cache(cls, raw_site_id):
         """Delete the cached device data (batteries and inverters) for a specific SolarEdge site."""
-        func = cls.get_devices
-        args = (cls, raw_site_id)
-        kwargs = {}
-        cache_key = f"{func.__name__}_{args}_{kwargs}"
+        cache_key = f"get_devices_(<class 'SolarEdge.SolarEdgePlatform'>, {raw_site_id})_{{}}"
         if cache_key in SolarPlatform.cache:
             del SolarPlatform.cache[cache_key]
             cls.log(f"Deleted cache for get_devices for site {raw_site_id}")
