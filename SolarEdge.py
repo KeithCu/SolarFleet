@@ -1,15 +1,15 @@
-import time
+import time as pytime
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 from typing import List, Dict
 import datetime
-from datetime import timedelta, datetime, timezone
-import time
+from datetime import timedelta, datetime, timezone, time
 import requests
 import keyring
 
 import api_keys
 import SolarPlatform
+import GeoCode
 
 SOLAREDGE_BASE_URL = 'https://monitoringapi.solaredge.com/v2'
 SOLAREDGE_SITE_URL = 'https://monitoring.solaredge.com/solaredge-web/p/site/'
@@ -72,6 +72,36 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         return all_sites
 
     @classmethod
+    def get_coordinates(cls, site):
+        """Get coordinates for a site: full address, then street name fallback."""
+        # Extract location components
+        location = site['location']
+        address = location['address']  # e.g., "3813 New Salem Avenue"
+        zip_code = location['zip']
+
+        # # Case 1: Full address (with street number)
+        # full_address = f"{address}, {zip_code}"
+        # lat, lon = GeoCode.geocode_address(full_address)
+        # if lat and lon:
+        #     lat = float(lat)
+        #     lon = float(lon)
+        #     return lat, lon
+
+        # # Case 2: Street name only
+        # street_parts = address.split(maxsplit=1)
+        # if len(street_parts) > 1:
+        #     street_name = street_parts[1]
+        #     street_only = f"{street_name}, {zip_code}"
+        #     lat, lon = GeoCode.geocode_address(street_only)
+        #     if lat and lon:
+        #         lat = float(lat)
+        #         lon = float(lon)
+        #         return lat, lon
+
+        # If both fail, go based on zip
+        return SolarPlatform.get_coordinates(zip_code)
+
+    @classmethod
     def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         sites = cls.get_sites_list()
 
@@ -87,7 +117,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             site_id = cls.add_vendorcodeprefix(raw_site_id)
             zipcode = site['location']['zip']
             name = site.get('name')
-            latitude, longitude = SolarPlatform.get_coordinates(zipcode)
+            latitude, longitude = cls.get_coordinates(site)
             site_info = SolarPlatform.SiteInfo(site_id, name, site_url, zipcode, latitude, longitude)
             sites_dict[site_id] = site_info
 
@@ -100,7 +130,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         params = {"types": ["BATTERY", "INVERTER"]}
 
         cls.log(f"Fetching Inverter / battery inventory data from SolarEdge API for site {raw_site_id}.")
-        time.sleep(SOLAREDGE_SLEEP)
+        pytime.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         devices = response.json()
@@ -147,7 +177,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         params = {'from': start_time.isoformat() + 'Z', 'to': end_time.isoformat() + 'Z',
                   'resolution': 'QUARTER_HOUR', 'unit': 'PERCENTAGE'}
         
-        time.sleep(SOLAREDGE_SLEEP)
+        pytime.sleep(SOLAREDGE_SLEEP)
         cls.log(f"Fetching battery State of Energy from SolarEdge API for site {raw_site_id} and battery {serial_number}.")
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
@@ -186,7 +216,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
                   'resolution': 'QUARTER_HOUR', 'unit': 'KW'}
 
         cls.log(f"Fetching production from SolarEdge API for site: {raw_site_id} inverter: {inverter_id} at {formatted_begin_time}.")
-        time.sleep(SOLAREDGE_SLEEP)
+        pytime.sleep(SOLAREDGE_SLEEP)
         response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
         response.raise_for_status()
         json = response.json().get('values', [])
@@ -234,8 +264,8 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         tz = ZoneInfo(SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE))
         
         # Convert dates to 6 AM local start and 23:59:59 local end, then to UTC
-        start_local = datetime.combine(start_date, datetime.time(6, 0, 0), tzinfo=tz)
-        end_local = datetime.combine(end_date, datetime.time(23, 59, 59), tzinfo=tz)
+        start_local = datetime.combine(start_date, time(6, 0, 0), tzinfo=tz)
+        end_local = datetime.combine(end_date, time(23, 59, 59), tzinfo=tz)
         start_utc = start_local.astimezone(timezone.utc)
         end_utc = end_local.astimezone(timezone.utc)
 
@@ -254,27 +284,20 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         # Log the exact URL for debugging
         full_url = requests.Request('GET', url, headers=SOLAREDGE_HEADERS, params=params).prepare().url
         cls.log(f"Fetching energy from SolarEdge API for site: {raw_site_id} with URL: {full_url}")
-        time.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
+        pytime.sleep(1) #Longer sleep for this expensive request, but not all day because we have a lot to gather ;-)
     
-        # Make API request with retries
-        for attempt in range(3):
-            try:
-                response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
-                response.raise_for_status()
-                # Validate response data before returning to avoid caching bad data
-                json_data = response.json()
-                values = json_data.get('values', [])
-                if not values:
-                    cls.log(f"Empty data returned for site {raw_site_id} from {formatted_start} to {formatted_end}")
-                return values  # Only return if successful and valid
-            except Exception as e:
-                cls.log(f"Attempt {attempt+1} failed for site {raw_site_id}: {e}")
-                if attempt == 2:  # Last attempt
-                    raise  # Rethrow after 3 failures
-                time.sleep(5)  # Wait before retrying
+        try:
+            response = requests.get(url, headers=SOLAREDGE_HEADERS, params=params)
+            response.raise_for_status()
+            json_data = response.json()
+            values = json_data.get('values', [])
+            if not values:
+                cls.log(f"Empty data returned for site {raw_site_id} from {formatted_start} to {formatted_end}")
+            return values  # Only return if successful and valid
+        except Exception as e:
+            cls.log(f"Production request failed for site {raw_site_id}: {e}")
+            raise
     
-
-
 
     @classmethod
     def convert_alert_to_standard(cls, alert):

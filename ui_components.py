@@ -77,6 +77,16 @@ def display_production_chart(site_df):
 
     st.altair_chart(chart, use_container_width=True)
 
+# Define a sorting key based on status to separate green from non-green
+def get_sort_key(row):
+    if row.get('is_offline', False):
+        return 1  # Non-green (offline)
+    status = SolarPlatform.has_low_production(row['production_kw'], None, None)
+    if status == SolarPlatform.ProductionStatus.GOOD:
+        return 0  # Green
+    return 1  # Non-green (ISSUE or SNOWY)
+
+
 def create_map_view(sites_df, fleet_avg, fleet_std):
     # Center the map at the average location of all sites
     avg_lat = sites_df['latitude'].mean()
@@ -95,29 +105,34 @@ def create_map_view(sites_df, fleet_avg, fleet_std):
             print(f"Skipping markers for zipcode: {group['zipcode'].iloc[0]} - coordinates ({lat}, {lon}) out of bounds")
             continue
 
-        N = len(group)  # Number of sites at this zip code
+        # Get list of (index, row) from the group
+        rows = list(group.iterrows())
+
+        # Sort rows: green (0) first, non-green (1) last
+        rows_sorted = sorted(rows, key=lambda r: get_sort_key(r[1]))
+
+        # Calculate positions for markers
+        N = len(rows_sorted)
         if N == 1:
-            # Single site: place marker at the center
             positions = [(lat, lon)]
         else:
-            # Multiple sites: place markers in a circle with radius scaled by sqrt(N)
-            base_radius = 0.002  # Base radius in degrees (~222 meters at latitude)
-            R = base_radius * math.sqrt(N)  # Radius increases with square root of N for more space
+            base_radius = 0.002  # Base radius in degrees
+            R = base_radius * math.sqrt(N)  # Radius scales with sqrt(N)
             positions = []
             for i in range(N):
-                theta = 360 * i / N  # Angle in degrees, evenly spaced
+                theta = 360 * i / N  # Angle in degrees
                 offset_lat = R * math.cos(math.radians(theta))
                 offset_lon = R * math.sin(math.radians(theta))
                 positions.append((lat + offset_lat, lon + offset_lon))
 
-        # Add markers for each site in the group
-        for i, (_, row) in enumerate(group.iterrows()):
+        # Add markers in the sorted order
+        for i, (idx, row) in enumerate(rows_sorted):
             marker_lat, marker_lon = positions[i]
             marker_coords.append([marker_lat, marker_lon])
 
-            # Determine marker color based on status
+            # Determine marker color based on status (same logic as sorting)
             if row.get('is_offline', False):
-                color = 'blue'
+                color = 'blue'  # Offline
             else:
                 status = SolarPlatform.has_low_production(row['production_kw'], fleet_avg, fleet_std)
                 if status is SolarPlatform.ProductionStatus.GOOD:

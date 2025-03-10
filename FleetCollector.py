@@ -1,8 +1,9 @@
 from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta, time, date
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import threading
 import time as pytime
+import os
 
 from pandas import MultiIndex
 import pandas as pd
@@ -11,85 +12,162 @@ import streamlit as st
 import SolarPlatform
 import Database as db
 
+DUMP_DIRECTORY = "exports"
+
+def get_year_intervals(year: int) -> List[Tuple[date, date]]:
+    start_of_year = date(year, 1, 1)
+    end_of_year = date(year, 12, 31)
+    interval = timedelta(days=80)
+    intervals = []
+    current_start = start_of_year
+    
+    while current_start <= end_of_year:
+        current_end = min(current_start + interval - timedelta(days=1), end_of_year)
+        intervals.append((current_start, current_end))
+        current_start = current_end + timedelta(days=1)
+    
+    return intervals
+
+def validate_data_range(platform, site_id, energy_data, start_date, end_date):
+    if not energy_data:
+        return False
+
+    first_str = energy_data[0]['timestamp'].split('T')[0]
+    last_str = energy_data[-1]['timestamp'].split('T')[0]
+    first_returned = date.fromisoformat(first_str)
+    last_returned = date.fromisoformat(last_str)
+
+    if first_returned > start_date or last_returned < end_date:
+        platform.log(f"Insufficient data for site {site_id}: requested {start_date} to {end_date}, got {first_returned} to {last_returned}")
+        return False
+
+    if first_returned < start_date or last_returned > end_date:
+        platform.log(f"Warning: Extra data for site {site_id}: requested {start_date} to {end_date}, got {first_returned} to {last_returned}")
+
+    return True
+
+def process_energy_data(data_dict, energy_data, site_id):
+    """Process energy data into the data dictionary"""
+    for item in energy_data:
+        date_str = item['timestamp'].split('T')[0]
+        value = item['value']
+        if date_str not in data_dict:
+            data_dict[date_str] = {}
+        data_dict[date_str][site_id] = value
+
+def merge_site_files(file_list, output_file):
+    """Merge individual site CSV files into one combined file"""
+    dataframes = []
+    
+    for file in file_list:
+        if file and os.path.exists(file):
+            site_df = pd.read_csv(file, index_col=0)
+            dataframes.append(site_df)
+    
+    if dataframes:
+        # Merge all dataframes by their date index
+        result = pd.concat(dataframes, axis=1)
+        result.to_csv(output_file, index_label='Date')
+
+def process_single_site(platform, year: int, site_id: str, sites_map: dict) -> Optional[str]:
+    """Process a single site with retry logic and save to individual file"""
+    site_name = sites_map[site_id].name if site_id in sites_map else site_id
+    site_code = site_id.split(':')[1] if ':' in site_id else site_id
+    prefix = platform.get_vendorcode()
+    site_file = os.path.join(DUMP_DIRECTORY, f"{prefix}_{site_code}_{year}_temp.csv")
+    
+    data = {}
+    site_errors = []
+    
+    intervals = get_year_intervals(year)
+    
+    # Process each interval with retries
+    for start_date, end_date in intervals:
+        max_retries = 3
+        retry_count = 0
+        success = False
+        
+        while not success and retry_count < max_retries:
+            try:
+                energy_data = platform.get_site_energy(site_id, start_date, end_date)
+                if energy_data:  # non-empty list; may be partial
+                    if not validate_data_range(platform, site_id, energy_data, start_date, end_date):
+                        platform.log(f"Partial data for {site_id} from {start_date} to {end_date}")
+                    process_energy_data(data, energy_data, site_id)
+                    success = True
+                else:
+                    platform.log(f"No data for {site_id} from {start_date} to {end_date} (site may not be installed yet)")
+                    success = True
+            except Exception as e:
+                error_msg = f"Error for site {site_id} from {start_date} to {end_date}: {str(e)}"
+                platform.log(error_msg)
+                site_errors.append(error_msg)
+                retry_count += 1
+                if retry_count < max_retries:
+                    platform.log(f"Retrying ({retry_count}/{max_retries})...")
+                    pytime.sleep(2 ** retry_count)  # Exponential backoff
+    
+    # Always create file even if no data was collected
+    dates = pd.date_range(start=date(year, 1, 1), end=date(year, 12, 31), freq='D').strftime('%Y-%m-%d').tolist()
+    if data:
+        df = pd.DataFrame.from_dict(data, orient='index')
+        df = df.reindex(index=dates, fill_value=0.0)
+    else:
+        df = pd.DataFrame(0.0, index=dates, columns=[f"{site_name} ({site_id})"])
+    df.columns = MultiIndex.from_tuples([(f"{site_name} ({site_id})", 'Production - Energy (WH)')])
+    
+    if site_errors:
+        error_info = pd.DataFrame({"Errors": site_errors})
+        error_info.to_csv(site_file.replace('.csv', '_errors.csv'), index=False)
+        # Also add each error as a row in the main DataFrame
+        for error_msg in site_errors:
+            error_row = pd.Series(index=df.columns, dtype='object')
+            error_row[:] = error_msg
+            df = pd.concat([df, error_row.to_frame().T], ignore_index=True)
+            
+    df.to_csv(site_file, index_label='Date')
+    return site_file
+
+
+def save_site_yearly_production(platform, year: int, site_ids: Optional[List[str]] = None) -> List[str]:
+    sites_map = platform.get_sites_map()
+    if site_ids is None:
+        site_ids = sorted(sites_map.keys())
+        file_suffix = "All_Sites"
+    else:
+        file_suffix = f"{site_ids[0].split(':')[1]}_et_al" if len(site_ids) > 5 else "_".join([id.split(":")[1] for id in site_ids])
+    
+    # Keep track of successfully processed sites and generated files
+    successful_files = []
+    all_site_files = []
+    
+    # Process each site independently
+    for site_id in site_ids:
+        site_file = process_single_site(platform, year, site_id, sites_map)
+        all_site_files.append(site_file)
+        if site_file:  # None would indicate failed processing
+            successful_files.append(site_file)
+            
+    # Merge all successful site files into final output
+    if successful_files:
+        prefix = platform.get_vendorcode()
+        output_file = os.path.join(DUMP_DIRECTORY, f"{prefix}_production_{year}_{file_suffix}.csv")
+        merge_site_files(successful_files, output_file)
+        
+        # Clean up individual site files if desired
+        # for file in all_site_files:
+        #     if file and os.path.exists(file):
+        #         os.remove(file)
+                
+        return output_file
+    return None
+
 
 # The list of all platforms to collect data from
 from SolarEdge import SolarEdgePlatform
 from Enphase import EnphasePlatform
 # from SolArk import SolArkPlatform
 # from Solis import SolisPlatform
-
-def save_site_yearly_production(platform, year: int, site_ids: Optional[List[str]] = None) -> str:
-    sites_map = platform.get_sites_map()
-    if site_ids is None:
-        site_ids = sorted(sites_map.keys())
-        file_suffix = "All_Sites"
-    else:
-        if len(site_ids) <= 5:
-            file_suffix = "_".join([id.split(":")[1] for id in site_ids])
-        else:
-            file_suffix = f"{site_ids[0].split(':')[1]}_et_al"
-    
-    data = {}
-
-    start_of_year = date(year, 1, 1)
-    end_of_year = date(year, 12, 31)
-    interval = timedelta(days=80)
-    intervals = []
-    current_start = start_of_year
-    while current_start <= end_of_year:
-        current_end = min(current_start + interval - timedelta(days=1), end_of_year)
-        intervals.append((current_start, current_end))
-        current_start = current_end + timedelta(days=1)
-
-    for site_id in site_ids:        
-        error_msg = None
-
-        for start_date, end_date in intervals:
-            try:
-                energy_data = platform.get_site_energy(site_id, start_date, end_date)
-                if energy_data and (energy_data[0]['timestamp'].split('T')[0] != start_date.strftime('%Y-%m-%d') or energy_data[-1]['timestamp'].split('T')[0] != end_date.strftime('%Y-%m-%d')):
-                    platform.log(f"Warning: Data range mismatch for site {site_id}: requested {start_date} to {end_date}, got {energy_data[0]['timestamp']} to {energy_data[-1]['timestamp']}")
-            except Exception as e:
-                error_msg = f"Error for site {site_id} from {start_date} to {end_date}: {str(e)}"
-                platform.log(error_msg)
-                break  # Stop processing this site and move to saving
-
-            if not energy_data:
-                platform.log(f"No data returned for site {site_id} from {start_date} to {end_date}")
-            else:
-                platform.log(f"Returned {len(energy_data)} items for site {site_id} from {start_date} to {end_date}")
-
-            for item in energy_data:
-                date_str = item['timestamp'].split('T')[0]
-                value = item['value']
-                if date_str not in data:
-                    data[date_str] = {}
-                data[date_str][site_id] = value
-    
-            if error_msg:
-                break  # Stop processing further sites if an error occurred
-
-    start_date = date(year, 1, 1)
-    end_date = date(year, 12, 31)
-    dates = pd.date_range(start=start_date, end=end_date, freq='D').strftime('%Y-%m-%d').tolist()
-    
-    df = pd.DataFrame.from_dict(data, orient='index')        
-    df = df.reindex(index=dates, columns=site_ids, fill_value=0.0)
-    
-    columns = [(f"{sites_map[site_id].name} ({site_id})", 'Production - Energy (WH)') for site_id in site_ids]
-    df.columns = MultiIndex.from_tuples(columns)
-
-    prefix = platform.get_vendorcode()
-    dynamic_file_name = f"{prefix}_production_{year}_{file_suffix}.csv"
-
-    if error_msg:
-        # Add a row with the error message at the end of the DataFrame
-        error_row = pd.Series(index=df.columns, dtype='object')
-        error_row[:] = error_msg
-        f = pd.concat([df, error_row.to_frame().T], ignore_index=False)
-        
-    df.to_csv(dynamic_file_name, index_label='Date')
-    return dynamic_file_name
 
 def get_recent_noon() -> datetime:
     now = SolarPlatform.get_now()
