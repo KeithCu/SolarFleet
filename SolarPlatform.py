@@ -220,13 +220,6 @@ class SolarPlatform(ABC):
     def get_production(cls, site_id, reference_time) -> Dict[str, float]:
         pass
 
-
-    @classmethod
-    @abstractmethod
-    # If the data is bad, delete the cache of non-zero inverters to refresh.
-    def delete_empty_production(cls, site_id, reference_time) -> Dict[str, float]:
-        pass
-
     @classmethod
     @abstractmethod
     # deletes the device info cache (batteries, inverters) for a site
