@@ -256,7 +256,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
     def extract_last_two_and_after_dash(cls, serial):
         parts = serial.split("-")
         if len(parts) >= 2:  # Ensure there's a dash and parts after it
-            return parts[0][-2:] + parts[1]
+            return parts[0][-2:] + "-" + parts[1]
         return parts[0][-4:]  # If no dash, just return last 4 digits
     
     @classmethod
