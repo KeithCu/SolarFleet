@@ -251,10 +251,13 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         power = round(power, 2)
         return power
 
-    #Trim the SolarEdge serial numbers to the last 4 digits before the dash, which should be unique for a site.
+    # Extract the last 2 digits before the dash and all digits after the dash from SolarEdge serial numbers
     @classmethod
-    def extract_last_four_before_dash(cls, serial):
-        return serial.split("-")[0][-4:]
+    def extract_last_two_and_after_dash(cls, serial):
+        parts = serial.split("-")
+        if len(parts) >= 2:  # Ensure there's a dash and parts after it
+            return parts[0][-2:] + parts[1]
+        return parts[0][-4:]  # If no dash, just return last 4 digits
     
     @classmethod
     def get_production(cls, site_id, reference_time) -> Dict[str, float]:
@@ -266,7 +269,7 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
             serial_number = inverter.get('serialNumber')
             power = cls.get_inverter_production(raw_site_id, reference_time, serial_number)
 
-            sub_ser = cls.extract_last_four_before_dash(serial_number)
+            sub_ser = cls.extract_last_two_and_after_dash(serial_number)
 
             productions[sub_ser] = power
 
