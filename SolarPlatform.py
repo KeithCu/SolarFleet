@@ -190,7 +190,8 @@ def get_recent_noon() -> datetime:
     tz = ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE))
     today = now.date()
 
-    threshold = datetime.combine(today, time(12, 30), tzinfo=tz)  # Threshold in specified tz
+    #Give a couple of hours to get the latest data!
+    threshold = datetime.combine(today, time(14, 30), tzinfo=tz)  # Threshold in specified tz
 
     measurement_date = today if now >= threshold else today - timedelta(days=1)
 
@@ -217,6 +218,13 @@ class SolarPlatform(ABC):
     @abstractmethod
     # returns a dict of inverters to their current production (or ALL if micros)
     def get_production(cls, site_id, reference_time) -> Dict[str, float]:
+        pass
+
+
+    @classmethod
+    @abstractmethod
+    # If the data is bad, delete the cache of non-zero inverters to refresh.
+    def delete_empty_production(cls, site_id, reference_time) -> Dict[str, float]:
         pass
 
     @classmethod

@@ -127,7 +127,9 @@ def main():
                 else:
                     st.warning("Please enter a site_id")
 
-
+            if st.button("Delete today's production data"):
+                db.delete_todays_production_set()
+                st.success("Today's production data deleted!")
             if st.button("Delete Alerts (Test)"):
                 db.delete_all_alerts()
                 st.success("All alerts deleted!")
@@ -141,6 +143,18 @@ def main():
                 st.success("Battery data cleared!")
             if st.button("convert api_keys to keyring"):
                 SolarPlatform.set_keyring_from_api_keys()
+            
+            with st.expander("Selective Cache Deletion", expanded=False):
+                filter_str = st.text_input("Enter string to filter cache keys", key="cache_filter")
+                if st.button("Delete Cache Entries Matching Filter"):
+                    if filter_str:
+                        matching_keys = [key for key in SolarPlatform.cache.iterkeys() if filter_str in key]
+                        count_deleted = len(matching_keys)
+                        for key in matching_keys:
+                            del SolarPlatform.cache[key]
+                        st.success(f"Deleted {count_deleted} cache entries containing '{filter_str}'")
+                    else:
+                        st.warning("Please enter a filter string")
 
         with tab_logs:
             with st.expander("Show Logs", expanded=False):
