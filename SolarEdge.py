@@ -135,36 +135,15 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         response.raise_for_status()
         devices = response.json()
         return devices 
-    
-
-    @classmethod
-    def delete_inverter_production_cache(cls, raw_site_id, start_time, serial):
-        """Delete the cached inverter production data for a specific site, time, and serial."""
-        cache_key = (
-            f"_get_inverter_production_(<class '{cls.__module__}.{cls.__name__}'>, "
-            f"'{raw_site_id}', {start_time!r}, '{serial}')_{{}}"
-        )
-        if cache_key in SolarPlatform.cache:
-            del SolarPlatform.cache[cache_key]
-            cls.log(f"Deleted cache for _get_inverter_production for site {raw_site_id}, time {start_time}, serial {serial}")
-        else:
-            cls.log(f"No cache found for _get_inverter_production for site {raw_site_id}, time {start_time}, serial {serial}")
-
-
 
 
     @classmethod
-    def delete_device_cache(cls, raw_site_id):
+    def delete_device_cache(cls, site_id):
         """Delete the cached device data (batteries and inverters) for a specific SolarEdge site."""
+        raw_site_id = cls.strip_vendorcodeprefix(site_id)
         cache_key = f"get_devices_(<class 'SolarEdge.SolarEdgePlatform'>, '{raw_site_id}')_{{}}"
         if cache_key in SolarPlatform.cache:
             del SolarPlatform.cache[cache_key]
-
-        inverters = cls.get_inverters(raw_site_id)
-        for inverter in inverters:
-            cls.delete_inverter_production_cache(raw_site_id, SolarPlatform.get_recent_noon(), inverter.get('serialNumber'))
-
-
 
 
     #Sort by created_time so that the order is stable.

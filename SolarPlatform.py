@@ -120,7 +120,15 @@ def has_low_production(production_kw, fleet_avg, fleet_std):
                 if any(v is None or math.isnan(v) or v < 0.1 for v in values):
                     return ProductionStatus.ISSUE
             return ProductionStatus.GOOD
-                
+
+def delete_cache_entries(filter_str):
+    matching_keys = [key for key in cache.iterkeys() if filter_str in key]
+    count_deleted = len(matching_keys)
+    for key in matching_keys:
+        del cache[key]
+    return count_deleted
+
+
 @dataclass(frozen=True)
 class ProductionRecord:
     site_id: str
@@ -223,7 +231,7 @@ class SolarPlatform(ABC):
     @classmethod
     @abstractmethod
     # deletes the device info cache (batteries, inverters) for a site
-    def delete_device_cache(cls, raw_site_id):
+    def delete_device_cache(cls, site_id):
         pass
 
     @classmethod
