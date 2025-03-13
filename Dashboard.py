@@ -148,10 +148,7 @@ def main():
                 filter_str = st.text_input("Enter string to filter cache keys", key="cache_filter")
                 if st.button("Delete Cache Entries Matching Filter"):
                     if filter_str:
-                        matching_keys = [key for key in SolarPlatform.cache.iterkeys() if filter_str in key]
-                        count_deleted = len(matching_keys)
-                        for key in matching_keys:
-                            del SolarPlatform.cache[key]
+                        count_deleted = SolarPlatform.delete_cache_entries(filter_str)
                         st.success(f"Deleted {count_deleted} cache entries containing '{filter_str}'")
                     else:
                         st.warning("Please enter a filter string")
@@ -226,15 +223,12 @@ def main():
 
         platform.log("Starting application at " + str(datetime.now()))
 
-        #Button to start
-
         if st.button("Run Fleet Data Collection") and not SolarPlatform.cache['collection_running']:
             st.write("Collection started. Logs will appear below:")
 
             #Starts 1 thread per platform
             run_collection()
 
-            # Display completion message
             st.success("Collection complete!")
             #st.stop()
 
@@ -347,7 +341,7 @@ def main():
                             else:
                                 st.error(f"Unknown vendor code: {vendor_code}")
                                 continue
-                            platform_instance.delete_device_cache(raw_site_id)
+                            platform_instance.delete_device_cache(site_id)
                             st.success(f"Cache deleted for site {row['site_id']}")
 
     elif authentication_status == False:

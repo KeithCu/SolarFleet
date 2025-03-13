@@ -74,6 +74,19 @@ def add_alert_if_not_exists(site_id, alert_type, details, severity, first_trigge
             session.add(new_alert)
             session.commit()
 
+def fetch_alerts():
+    session = Sql.SessionLocal()
+
+    query = session.query(Sql.Alert)
+    alerts = pd.read_sql(query.statement, session.bind)
+    session.close()
+    return alerts
+
+
+def delete_all_alerts():
+    Sql.Alert.__table__.drop(bind=Sql.engine, checkfirst=True)
+    Sql.init_fleet_db()
+
 
 def update_battery_data(site_id, serial_number, model_number, state_of_energy):
     session = Sql.SessionLocal()
@@ -98,22 +111,6 @@ def update_battery_data(site_id, serial_number, model_number, state_of_energy):
 
     session.commit()
     session.close()
-
-# Battery Data Update Function
-
-
-def fetch_alerts():
-    session = Sql.SessionLocal()
-
-    query = session.query(Sql.Alert)
-    alerts = pd.read_sql(query.statement, session.bind)
-    session.close()
-    return alerts
-
-
-def delete_all_alerts():
-    Sql.Alert.__table__.drop(bind=Sql.engine, checkfirst=True)
-
 
 def fetch_low_batteries():
     session = Sql.SessionLocal()
@@ -169,6 +166,17 @@ def get_total_noon_kw() -> pd.DataFrame:
     finally:
         session.close()
 
+def delete_todays_production_set():
+    today = SolarPlatform.get_recent_noon().date()
+    session = Sql.SessionLocal()
+    try:
+        session.query(Sql.ProductionHistory).filter(Sql.ProductionHistory.production_day == today).delete()
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()    
 
 def get_production_set(production_day: date = None) -> set:
     session = Sql.SessionLocal()
