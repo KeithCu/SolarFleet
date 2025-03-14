@@ -192,7 +192,8 @@ def collect_platform(platform):
 
         platform.log("Data collection complete")
         # Add production data to database
-        db.process_bulk_solar_production(reference_date, production_set, False, 3.0)
+        db.process_bulk_solar_production(reference_date, production_set)
+        platform.log(f"Processed {len(production_set)} records.")
 
         SolarPlatform.cache['collection_status'][platform.get_vendorcode()] = 'completed'
 

@@ -1,5 +1,6 @@
 from datetime import datetime, date
-from typing import List, Tuple
+from typing import Tuple
+import threading
 import json
 import pandas as pd
 from sqlalchemy.orm.attributes import flag_modified
@@ -228,31 +229,18 @@ def insert_or_update_production_set(new_data: set[SolarPlatform.ProductionRecord
     finally:
         session.close()
 
+lock = threading.Lock()
+
 def process_bulk_solar_production(
         reference_date: date,
-        production_data: set[SolarPlatform.ProductionRecord],
-        recalibrate: bool = False,
-        sunny_threshold: float = 100.0):
+        production_data: set[SolarPlatform.ProductionRecord]):
 
     if not production_data:
         print("No production data provided.")
         return
 
-    # Compute average production for sanity check.
-    production_kw = 0.0
-    for site in production_data:
-        production_kw += SolarPlatform.calculate_production_kw(site.production_kw)
-
-    avg_prod = production_kw / len(production_data)
-    # if avg_prod < sunny_threshold and not recalibrate:
-    #     raise ValueError(
-    #         f"Average production ({avg_prod:.2f}) is below the sunny threshold ({sunny_threshold}). "
-    #         "Data rejected to prevent calibration on a cloudy day."
-    #     )
-
-    insert_or_update_production_set(production_data, reference_date)
-
-    print(f"Processed {len(production_data)} records. Average production: {avg_prod:.2f}")
+    with lock:
+            insert_or_update_production_set(production_data, reference_date)
 
 
 def set_config(key: str, value: any):

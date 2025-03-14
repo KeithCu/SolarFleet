@@ -198,8 +198,8 @@ def get_recent_noon() -> datetime:
     tz = ZoneInfo(cache.get('TimeZone', DEFAULT_TIMEZONE))
     today = now.date()
 
-    #Give a couple of hours to get the latest data!
-    threshold = datetime.combine(today, time(14, 30), tzinfo=tz)  # Threshold in specified tz
+    #Give two hours to get the data
+    threshold = datetime.combine(today, time(14, 00), tzinfo=tz)  # Threshold in specified tz
 
     measurement_date = today if now >= threshold else today - timedelta(days=1)
 
@@ -250,8 +250,8 @@ class SolarPlatform(ABC):
     def add_vendorcodeprefix(cls, site_id):
         return cls.get_vendorcode() + ":" + str(site_id)
 
-    @classmethod
-    def strip_vendorcodeprefix(cls, site_id):
+    @staticmethod
+    def strip_vendorcodeprefix(site_id):
         if ':' in site_id:
             site_id_raw = site_id.split(':', 1)[1]
             return site_id_raw
