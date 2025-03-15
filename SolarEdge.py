@@ -76,27 +76,27 @@ class SolarEdgePlatform(SolarPlatform.SolarPlatform):
         """Get coordinates for a site: full address, then street name fallback."""
         # Extract location components
         location = site['location']
-        address = location['address']  # e.g., "3813 New Salem Avenue"
+        address = location['address']
         zip_code = location['zip']
 
-        # # Case 1: Full address (with street number)
-        # full_address = f"{address}, {zip_code}"
-        # lat, lon = GeoCode.geocode_address(full_address)
-        # if lat and lon:
-        #     lat = float(lat)
-        #     lon = float(lon)
-        #     return lat, lon
+        # Case 1: Full address (with street number)
+        full_address = f"{address}, {zip_code}"
+        lat, lon = GeoCode.geocode_address(full_address)
+        if lat and lon:
+            lat = float(lat)
+            lon = float(lon)
+            return lat, lon
 
-        # # Case 2: Street name only
-        # street_parts = address.split(maxsplit=1)
-        # if len(street_parts) > 1:
-        #     street_name = street_parts[1]
-        #     street_only = f"{street_name}, {zip_code}"
-        #     lat, lon = GeoCode.geocode_address(street_only)
-        #     if lat and lon:
-        #         lat = float(lat)
-        #         lon = float(lon)
-        #         return lat, lon
+        # Case 2: Street name only
+        street_parts = address.split(maxsplit=1)
+        if len(street_parts) > 1:
+            street_name = street_parts[1]
+            street_only = f"{street_name}, {zip_code}"
+            lat, lon = GeoCode.geocode_address(street_only)
+            if lat and lon:
+                lat = float(lat)
+                lon = float(lon)
+                return lat, lon
 
         # If both fail, go based on zip
         return SolarPlatform.get_coordinates(zip_code)
