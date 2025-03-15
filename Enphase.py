@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 import SolarPlatform
+import GeoCode
 
 ENPHASE_BASE_URL = "https://api.enphaseenergy.com"
 ENPHASE_TOKENS = "Enphase Tokens"
@@ -71,6 +72,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
         headers = EnphasePlatform.get_basic_auth_header(ENPHASE_KEYS.client_id, ENPHASE_KEYS.client_secret)
         try:
             cls.log("Trying to Authenticate with Enphase API.")
+            time.sleep(ENPHASE_SLEEP)  # Add sleep before API call
             response = requests.post(url, data=data, headers=headers)
             response.raise_for_status()
             tokens = response.json()
@@ -116,6 +118,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             headers = {"Authorization": f"Bearer {access_token}"}
             try:
                 cls.log(f"Fetching sites from Enphase API, page: {page}.")
+                time.sleep(ENPHASE_SLEEP)  # Add sleep before API call
                 response = requests.get(url, headers=headers)
                 response.raise_for_status()
                 raw_data = response.json()
@@ -130,6 +133,42 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
         return all_systems
 
     @classmethod
+    def get_coordinates(cls, system):
+        """Get coordinates for a site: full address, then street name fallback."""
+        # Extract location components
+
+        location = system.get("address", {})
+        zip_code = location.get("postal_code")
+
+        # location = site['location']
+        # address = location['address']
+
+        #FIXME: Explore Enphase commissioning API to get more accurate coordinates.
+
+        # # Case 1: Full address (with street number)
+        # full_address = f"{address}, {zip_code}"
+        # lat, lon = GeoCode.geocode_address(full_address)
+        # if lat and lon:
+        #     lat = float(lat)
+        #     lon = float(lon)
+        #     return lat, lon
+
+        # # Case 2: Street name only
+        # street_parts = address.split(maxsplit=1)
+        # if len(street_parts) > 1:
+        #     street_name = street_parts[1]
+        #     street_only = f"{street_name}, {zip_code}"
+        #     lat, lon = GeoCode.geocode_address(street_only)
+        #     if lat and lon:
+        #         lat = float(lat)
+        #         lon = float(lon)
+        #         return lat, lon
+
+        # If both fail, go based on zip
+        return SolarPlatform.get_coordinates(zip_code)
+
+
+    @classmethod
     def get_sites_map(cls) -> Dict[str, SolarPlatform.SiteInfo]:
         raw_systems_data = cls.get_sites_list()
         sites_dict = {}
@@ -139,7 +178,7 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             name = system.get("name", f"System {raw_system_id}")
             location = system.get("address", {})
             zipcode = location.get("postal_code")
-            latitude, longitude = SolarPlatform.get_coordinates(zipcode)
+            latitude, longitude = cls.get_coordinates(system)
             site_url = ENPHASE_SITE_URL + str(raw_system_id)
             site_info = SolarPlatform.SiteInfo(site_id, name, site_url, zipcode, latitude, longitude)
             sites_dict[site_id] = site_info
@@ -216,16 +255,21 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
 
     @classmethod
     def get_batteries_metadata(cls, raw_system_id) -> list:
-        json = cls.get_site_devices(raw_system_id)
-        devices = json.get("devices", [])
-
+        json_response = cls.get_site_devices(raw_system_id)
         battery_devices = []
-        for device in devices:
-            if "encharges" in device:
-                encharges = devices["encharges"]
-                for encharge in encharges:
-                    battery_devices.append(encharge)  # Add the device to the list
-
+        
+        # Check if we got a dictionary response (not an empty list)
+        if isinstance(json_response, dict):
+            devices = json_response.get("devices", [])
+            
+            for device in devices:
+                # Check if the device itself has encharges field
+                if device and "encharges" in device:
+                    # Access the encharges array from this device
+                    encharges = devices.get("encharges", [])
+                    for encharge in encharges:
+                        battery_devices.append(encharge)
+        
         return battery_devices
 
     @classmethod
