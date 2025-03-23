@@ -237,6 +237,9 @@ def main():
         production_set = db.get_production_set(recent_noon)
         df_prod = pd.DataFrame([asdict(record) for record in production_set])
 
+        fleet_avg = None # site_df['production_kw_total'].mean()
+        fleet_std = None # site_df['production_kw_total'].std()
+
         st.header("🚨 Active Alerts")
 
         alerts_df = db.fetch_alerts()
@@ -245,7 +248,7 @@ def main():
         existing_alert_sites = set(alerts_df['site_id'].unique())
         synthetic_alerts = []
         for record in production_set:
-            if SolarPlatform.has_low_production(record.production_kw, None, None) is SolarPlatform.ProductionStatus.ISSUE and record.site_id not in existing_alert_sites:
+            if SolarPlatform.has_low_production(record.production_kw, fleet_avg, fleet_std) is SolarPlatform.ProductionStatus.ISSUE and record.site_id not in existing_alert_sites:
                 synthetic_alert = SolarPlatform.SolarAlert(
                     site_id=record.site_id,
                     alert_type=SolarPlatform.AlertType.PRODUCTION_ERROR,

@@ -1,19 +1,15 @@
-from enum import Enum
 import time
-import requests
 import base64
 import keyring
-from datetime import datetime
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict
+import requests
 
 import SolarPlatform
-import GeoCode
 
 ENPHASE_BASE_URL = "https://api.enphaseenergy.com"
 ENPHASE_TOKENS = "Enphase Tokens"
 ENPHASE_SITE_URL = "https://enlighten.enphaseenergy.com/systems/"
-
 
 @dataclass(frozen=True)
 class EnphaseKeys:
@@ -38,9 +34,8 @@ def fetch_enphase_keys():
 
 import api_keys
 
-#Enphase Installer API has 300 requests per minute, so add a small amount of sleeps to the API to prevent errors.
-#200 ms is probably overkill, since each request usually takes 1 second, but it is friendly to have some pauses.
-ENPHASE_SLEEP = 0.2
+#Add a small amount of sleep to prevent API errors.
+ENPHASE_SLEEP = 0.25
 
 ENPHASE_KEYS = EnphaseKeys(client_id=api_keys.ENPHASE_CLIENT_ID, client_secret=api_keys.ENPHASE_CLIENT_SECRET,
                             api_key=api_keys.ENPHASE_API_KEY, user_email=api_keys.ENPHASE_USER_EMAIL,
@@ -90,16 +85,26 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             stored_access_token, stored_refresh_token, expires_at = tokens
             if current_time < expires_at:
                 return stored_access_token
-            
-        access_token, new_refresh_token, expires_in = cls.authenticate_enphase(ENPHASE_KEYS.user_email, ENPHASE_KEYS.user_password)
-        if access_token:
-            expires_at = current_time + expires_in
-            SolarPlatform.cache.set(ENPHASE_TOKENS, (access_token, new_refresh_token,
-                                    expires_at), expire=SolarPlatform.CACHE_EXPIRE_YEAR)
-            return access_token
+            else:
+                access_token, new_refresh_token, expires_in = cls.authenticate_enphase(
+                    ENPHASE_KEYS.user_email, ENPHASE_KEYS.user_password,
+                    refresh_token=stored_refresh_token)
+                if not access_token:
+                    access_token, new_refresh_token, expires_in = cls.authenticate_enphase(
+                        ENPHASE_KEYS.user_email, ENPHASE_KEYS.user_password)
         else:
+            access_token, new_refresh_token, expires_in = cls.authenticate_enphase(
+                ENPHASE_KEYS.user_email, ENPHASE_KEYS.user_password
+            )
+        if not access_token:
             cls.log("Authentication failed in get_access_token")
             return None
+        expires_at = current_time + expires_in
+        SolarPlatform.cache.set(
+            ENPHASE_TOKENS, (access_token, new_refresh_token, expires_at),
+            expire=SolarPlatform.CACHE_EXPIRE_YEAR
+        )
+        return access_token
 
     #We use this to check for alerts, so cache for a short period of time.
     @classmethod
@@ -236,7 +241,8 @@ class EnphasePlatform(SolarPlatform.SolarPlatform):
             return []
 
     @classmethod
-    def delete_device_cache(cls, raw_system_id):
+    def delete_device_cache(cls, site_id):
+        raw_system_id = cls.strip_vendorcodeprefix(site_id)
         """Delete the cached device data (batteries and inverters) for a specific Enphase system."""
         func = cls.get_site_devices
         args = (cls, raw_system_id)
