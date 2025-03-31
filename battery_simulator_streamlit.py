@@ -151,12 +151,19 @@ def battery_simulator_tab():
                     current_time = live_df.iloc[-1]['Time']
                     live_df = live_df[live_df['Time'] >= (current_time - pd.Timedelta(days=2))]
                     
+                    # Store original load values before clipping for tooltips
+                    original_load = live_df['Load_kWh'].copy()
+                    # Clip load values to 10 kWh for visualization
+                    clipped_load = live_df['Load_kWh'].apply(lambda x: min(x, 10.0))
+                    
                     chart_df = pd.DataFrame({
                         'Time': live_df['Time'],
                         'SoC_kWh': live_df['SoC_kWh'],
                         'Adjusted_SoC_kWh': [max(0, soc - min_usable_capacity) for soc in live_df['SoC_kWh']],
                         'Production_kWh': live_df['Production_kWh'],
-                        'Load_kWh': live_df['Load_kWh'],
+                        'Load_kWh': clipped_load,
+                        'Original_Load_kWh': original_load,
+                        'Load_Clipped': original_load > 10.0,
                         'ExportedEnergy_kWh': live_df['ExportedEnergy_kWh'],
                         'UnmetLoad_kWh': live_df['UnmetLoad_kWh'],
                         'RunningTotalUnmet_kWh': live_df.get('RunningTotalUnmet_kWh', 0),
@@ -193,7 +200,11 @@ def battery_simulator_tab():
                             domain=['Renewable', 'Grid'],
                             range=['#8cc63f', '#ff7f0e']
                         )),
-                        tooltip=['Time:T', 'Load_kWh:Q', 'LoadSource:N']
+                        tooltip=['Time:T', 
+                                alt.Tooltip('Load_kWh:Q', title='Load (kWh) [Clipped]'),
+                                alt.Tooltip('Original_Load_kWh:Q', title='Load (kWh) [Actual]'),
+                                alt.Tooltip('Load_Clipped:N', title='Load Clipped?'),
+                                'LoadSource:N']
                     )
                     
                     # Layer the production and load charts (sharing the same scale)
