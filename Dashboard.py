@@ -15,7 +15,7 @@ from SolarEdge import SolarEdgePlatform
 from Enphase import EnphasePlatform
 import auth
 import ui_components as ui
-
+from battery_simulator_streamlit import battery_simulator_tab
 #
 # Main Streamlit code/UI starts here
 #
@@ -71,12 +71,28 @@ def main():
 
         sites.update(sites_enphase)
 
-        tab_content, tab_settings, tab_cache, tab_logs, tab_production, tab_users = st.tabs(["Content ", "Settings", "Cache", "Logs", "Production History", "Users"])
-        with tab_content:
+        # Initialize tab state if it doesn't exist
+        if 'active_tab' not in st.session_state:
+            st.session_state.active_tab = 0
+
+        # Tab labels
+        tab_labels = ["Content ", "Settings", "Battery Simulation", "Cache", "Logs", "Production History", "Users"]
+        
+        # Custom tab UI to remember tab position
+        cols = st.columns(len(tab_labels))
+        for i, col in enumerate(cols):
+            if col.button(tab_labels[i], key=f"tab_{i}", 
+                         use_container_width=True,
+                         type="secondary" if i != st.session_state.active_tab else "primary"):
+                st.session_state.active_tab = i
+                st.rerun()
+        
+        # Display content based on active tab
+        if st.session_state.active_tab == 0:  # Content tab
             st.metric("Active Sites In Fleet", len(sites))
             st.metric("Active Batteries", db.fetch_battery_count())
-
-        with tab_settings:
+        
+        elif st.session_state.active_tab == 1:  # Settings tab
             all_timezones = sorted(SolarPlatform.SELECT_TIMEZONES)
             current_timezone = SolarPlatform.cache.get('TimeZone', SolarPlatform.DEFAULT_TIMEZONE)      
             with st.expander("Time Zone Configuration", expanded=True):
@@ -102,9 +118,12 @@ def main():
                 if site_id_to_ignore:
                     db.add_ignored_site(site_id_to_ignore)
                     st.rerun()
-
-
-        with tab_cache:
+        
+        elif st.session_state.active_tab == 2:  # Battery Simulation tab
+            st.subheader("Battery Simulation")
+            battery_simulator_tab()
+        
+        elif st.session_state.active_tab == 3:  # Cache tab
             st.subheader("Refresh Device Data Cache")
             site_id_to_refresh = st.text_input("Enter site_id to refresh device data (e.g., SE:12345 or EN:67890)")
             if st.button("Refresh Cache"):
@@ -152,16 +171,15 @@ def main():
                         st.success(f"Deleted {count_deleted} cache entries containing '{filter_str}'")
                     else:
                         st.warning("Please enter a filter string")
-
-        with tab_logs:
+        
+        elif st.session_state.active_tab == 4:  # Logs tab
             with st.expander("Show Logs", expanded=False):
                 st.text_area("Logs", value = SolarPlatform.cache.get("global_logs", ""), height=150)
             if st.button("Clear Logs"):
                 SolarPlatform.cache.delete("global_logs")
                 st.success("Logs cleared!")
-
-        with tab_production:
-            # UI elements
+        
+        elif st.session_state.active_tab == 5:  # Production History tab
             site_ids_input = st.text_input("Enter site ID or comma-separated site IDs (e.g., SE:3148836, SE:3148837)", "")
             all_sites = st.checkbox("Select All Sites")
 
@@ -169,19 +187,15 @@ def main():
             years = list(range(current_year - 5, current_year + 1))
             selected_year = st.selectbox("Select Year", years, index=years.index(current_year - 1))
 
-            # Process the input
             if all_sites:
                 site_ids = None
             else:
-                # Parse the input into a list, handling single or multiple site IDs
                 site_ids = [site_id.strip() for site_id in site_ids_input.split(",") if site_id.strip()]
 
-            # Ensure at least one site ID is provided or "All" is selected
             if not site_ids and not all_sites:
                 st.warning("Please enter at least one site ID or select 'All Sites'.")
             else:
                 if st.button("Fetch Production Data"):
-                    # Call the API to generate production data for the given site IDs
                     platform_t = SolarEdgePlatform()
                     file_name = save_site_yearly_production(platform_t, selected_year, site_ids)
                     st.success("Production data saved successfully.")
@@ -192,8 +206,8 @@ def main():
                             file_name=file_name,
                             mime="text/csv",
                         )
-
-        with tab_users:
+        
+        elif st.session_state.active_tab == 6:  # Users tab
             user_name = st.text_input("User Name")
             hashed_password = st.text_input("Hashed Password", type="default")
             email = st.text_input("Email Address", type="default")
@@ -226,25 +240,22 @@ def main():
         if st.button("Run Fleet Data Collection") and not SolarPlatform.cache['collection_running']:
             st.write("Collection started. Logs will appear below:")
 
-            #Starts 1 thread per platform
             run_collection()
 
             st.success("Collection complete!")
-            #st.stop()
 
         st.markdown("---")
 
         production_set = db.get_production_set(recent_noon)
         df_prod = pd.DataFrame([asdict(record) for record in production_set])
 
-        fleet_avg = None # site_df['production_kw_total'].mean()
-        fleet_std = None # site_df['production_kw_total'].std()
+        fleet_avg = None
+        fleet_std = None
 
         st.header("🚨 Active Alerts")
 
         alerts_df = db.fetch_alerts()
 
-        # Generate synthetic alerts for sites with production below 0.1 kW
         existing_alert_sites = set(alerts_df['site_id'].unique())
         synthetic_alerts = []
         for record in production_set:
@@ -264,7 +275,6 @@ def main():
 
         site_df = pd.DataFrame([asdict(site_info) for site_info in sites.values()])
 
-        # Fetch the site history
         sites_history_df = db.fetch_sites()[["site_id", "history"]]
 
         if not alerts_df.empty:
@@ -314,13 +324,11 @@ def main():
 
         site_data_tab, device_cache_tab = st.tabs(["Site Data", "Device Cache"])
 
-
         with site_data_tab:
             st.dataframe(site_df)
 
         with device_cache_tab:
             st.subheader("Manage Device Cache")
-            # Inject CSS for smaller buttons and text
             st.markdown("""
             <style>
             div.stButton > button {
