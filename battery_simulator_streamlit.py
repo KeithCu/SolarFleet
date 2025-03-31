@@ -156,11 +156,15 @@ def battery_simulator_tab():
                     # Clip load values to 10 kWh for visualization
                     clipped_load = live_df['Load_kWh'].apply(lambda x: min(x, 10.0))
                     
+                    # Calculate adjusted production based on PV share
+                    adjusted_production = live_df['Production_kWh'] * (pv_share_percent / 100)
+                    
                     chart_df = pd.DataFrame({
                         'Time': live_df['Time'],
                         'SoC_kWh': live_df['SoC_kWh'],
                         'Adjusted_SoC_kWh': [max(0, soc - min_usable_capacity) for soc in live_df['SoC_kWh']],
-                        'Production_kWh': live_df['Production_kWh'],
+                        'Production_kWh': adjusted_production,  # Use adjusted production to match calculations
+                        'Original_Production_kWh': live_df['Production_kWh'],  # Store original for reference
                         'Load_kWh': clipped_load,
                         'Original_Load_kWh': original_load,
                         'Load_Clipped': original_load > 10.0,
@@ -171,7 +175,6 @@ def battery_simulator_tab():
                         'LoadSource': ['Renewable' if unmet <= 0.01 else 'Grid' for unmet in live_df['UnmetLoad_kWh']]
                     })
                     
-                    # Create separate charts with different scales
                     # SOC chart with its own scale
                     soc_chart = alt.Chart(chart_df).mark_line(color='#1f77b4').encode(
                         x='Time:T',
@@ -181,14 +184,16 @@ def battery_simulator_tab():
                         tooltip=['Time:T', 'SoC_kWh:Q', 'Adjusted_SoC_kWh:Q']
                     )
                     
-                    # Other metrics with their own scale limited to around 10 kWh
+                    # Update the production chart tooltip to include original production
                     production_chart = alt.Chart(chart_df).mark_point(size=CHART_POINT_SIZE).encode(
                         x='Time:T',
                         y=alt.Y('Production_kWh:Q', 
                                scale=alt.Scale(domain=[0, min(10, chart_y_max)]),
-                               title='Production/Load/Export (kWh)'),
+                               title=f'Production ({pv_share_percent}%)/Load/Export (kWh)'),
                         color=alt.value('#2ca02c'),
-                        tooltip=['Time:T', 'Production_kWh:Q']
+                        tooltip=['Time:T', 
+                                alt.Tooltip('Production_kWh:Q', title=f'Production ({pv_share_percent}%)'),
+                                alt.Tooltip('Original_Production_kWh:Q', title='Original Production')]
                     )
                     
                     load_chart = alt.Chart(chart_df).mark_point(size=CHART_POINT_SIZE).encode(
