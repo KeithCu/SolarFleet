@@ -1,4 +1,9 @@
 import math
+import os
+from datetime import datetime
+
+# Third-party imports
+import requests
 import numpy as np
 import pandas as pd
 import folium
@@ -6,7 +11,7 @@ import altair as alt
 import streamlit as st
 from streamlit_folium import folium_static as st_folium
 
-
+# Local application imports
 import Database as db
 import SolarPlatform
 
@@ -328,3 +333,113 @@ def create_alert_section(site_df, alerts_df, sites_history_df):
         column_config=column_config,
         alert_type=None
     )
+
+# --- Streamlit Weather Widget ---
+
+
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
+WEATHER_CACHE_TIMEOUT = 3600 * 12  # 12 hours
+DEFAULT_WEATHER_LAT = "42.3297"
+DEFAULT_WEATHER_LON = "83.0425"
+
+# --- Weather cache bucketing helpers ---
+WEATHER_BUCKET_PRECISION = 1  # Decimal places for lat/lon rounding
+
+def _round_coord(val, precision=WEATHER_BUCKET_PRECISION):
+    return round(float(val), int(precision))
+
+def _bucket_key(lat, lon, precision=WEATHER_BUCKET_PRECISION):
+    return f"{_round_coord(lat, precision):.{precision}f},{_round_coord(lon, precision):.{precision}f}"
+
+def _weather_cache_key(lat, lon, date_str=None):
+    if date_str is None:
+        date_str = datetime.now().date().isoformat()
+    key = _bucket_key(lat, lon)
+    return f"weather:{key}:{date_str}"
+
+def get_browser_location():
+    """Request browser geolocation and store in st.session_state['browser_location']."""
+    if 'browser_location' not in st.session_state:
+        st.session_state['browser_location'] = None
+        st.components.v1.html('''
+            <script>
+            navigator.geolocation.getCurrentPosition(
+                function(pos) {
+                    const coords = pos.coords.latitude + "," + pos.coords.longitude;
+                    window.parent.postMessage({type: 'streamlit:setComponentValue', value: coords}, '*');
+                }
+            );
+            </script>
+        ''', height=0)
+    # The rest is handled by Streamlit's session state and component communication.
+
+@SolarPlatform.disk_cache(SolarPlatform.CACHE_EXPIRE_HOUR * 4)
+def fetch_weather_data(lat, lon):
+    """Fetch and process 5-day weather forecast from OpenWeatherMap."""
+    url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&units=imperial&appid={WEATHER_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        weather_data = response.json()
+        daily_data = {}
+        for entry in weather_data.get("list", []):
+            date_str = entry.get("dt_txt", "")[:10]
+            daily_data.setdefault(date_str, []).append(entry)
+        processed = []
+        for i, (date, entries) in enumerate(sorted(daily_data.items())[:5]):
+            temp_mins = [e["main"]["temp_min"] for e in entries if "main" in e and "temp_min" in e["main"]]
+            temp_maxs = [e["main"]["temp_max"] for e in entries if "main" in e and "temp_max" in e["main"]]
+            pops = [e.get("pop", 0) for e in entries]
+            rain_total = sum(e.get("rain", {}).get("3h", 0) for e in entries if "rain" in e)
+            is_today = datetime.strptime(date, "%Y-%m-%d").date() == datetime.now().date()
+            preferred_entry = entries[0] if is_today else next((e for e in entries if "12:00:00" in e.get("dt_txt", "")), entries[0])
+            weather_main = preferred_entry["weather"][0]["main"] if preferred_entry.get("weather") and len(preferred_entry["weather"]) > 0 else "N/A"
+            weather_icon = preferred_entry["weather"][0]["icon"] if preferred_entry.get("weather") and len(preferred_entry["weather"]) > 0 else "01d"
+            processed.append({
+                "dt": int(datetime.strptime(date, "%Y-%m-%d").timestamp()),
+                "temp_min": min(temp_mins) if temp_mins else None,
+                "temp_max": max(temp_maxs) if temp_maxs else None,
+                "precipitation": round(max(pops) * 100) if pops else 0,
+                "rain": round(rain_total, 2),
+                "weather": weather_main,
+                "weather_icon": weather_icon
+            })
+        return processed
+    except Exception as e:
+        st.warning(f"Could not fetch weather data: {e}")
+        return None
+
+def display_weather(lat=None, lon=None):
+    """Display a 5-day weather forecast in Streamlit, using browser location if available and bucketed diskcache."""
+    get_browser_location()
+    browser_loc = st.session_state.get('browser_location', None)
+    if browser_loc and len(browser_loc) == 2:
+        lat, lon = browser_loc
+    lat = lat or DEFAULT_WEATHER_LAT
+    lon = lon or DEFAULT_WEATHER_LON
+
+    # Always round down to the bucket precision before fetching weather data
+    lat = math.floor(float(lat) * 10 ** WEATHER_BUCKET_PRECISION) / 10 ** WEATHER_BUCKET_PRECISION
+    lon = math.floor(float(lon) * 10 ** WEATHER_BUCKET_PRECISION) / 10 ** WEATHER_BUCKET_PRECISION
+
+    forecast = fetch_weather_data(lat, lon)
+
+    st.markdown("### 5-Day Weather Forecast")
+    if forecast:
+        cols = st.columns(len(forecast))
+        for i, day in enumerate(forecast):
+            d = datetime.fromtimestamp(day["dt"])
+            day_name = "Today" if d.date() == datetime.now().date() else d.strftime("%a")
+            temp_max = round(day.get("temp_max", 0))
+            temp_min = round(day.get("temp_min", 0))
+            precipitation = round(day.get("precipitation", 0))
+            weather_icon = day.get("weather_icon", "01d")
+            weather_desc = day.get("weather", "N/A")
+            with cols[i]:
+                st.markdown(f"**{day_name}**")
+                st.image(f"https://openweathermap.org/img/wn/{weather_icon}.png", width=60)
+                st.markdown(f"{weather_desc}")
+                st.markdown(f"**{temp_max}\u00b0 / {temp_min}\u00b0**")
+                st.markdown(f"{precipitation}% precip")
+    else:
+        st.info("Weather data not available.")

@@ -10,11 +10,11 @@ from yaml.loader import SafeLoader
 import SolarPlatform
 import SqlModels as Sql
 import Database as db
+import auth
+import ui_components as ui
 from FleetCollector import run_collection, save_site_yearly_production
 from SolarEdge import SolarEdgePlatform
 from Enphase import EnphasePlatform
-import auth
-import ui_components as ui
 from battery_simulator_streamlit import battery_simulator_tab
 #
 # Main Streamlit code/UI starts here
@@ -55,10 +55,14 @@ def main():
 
     if authentication_status == True:
         authenticator.logout('Logout', 'main')
-       
+
         #
         # After authentication
         #
+
+        # Show weather widget at the top after authentication
+        ui.display_weather()
+       
 
         platform = SolarEdgePlatform()
         sites = platform.get_sites_map()
