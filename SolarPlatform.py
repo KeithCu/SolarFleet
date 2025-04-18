@@ -275,9 +275,8 @@ CACHE_EXPIRE_NEVER = CACHE_EXPIRE_YEAR * 100
 
 # Scatter monthly requests over a period of 10 days to avoid cache stampede.
 def cache_expire_month():
-    base = CACHE_EXPIRE_WEEK * 4
-    offset = random.randint(-CACHE_EXPIRE_DAY * 5, CACHE_EXPIRE_DAY * 5)
-    return base + offset
+    """Return a lambda that generates a randomized monthly cache expiration on each call."""
+    return lambda: CACHE_EXPIRE_WEEK * 4 + random.randint(-CACHE_EXPIRE_DAY * 5, CACHE_EXPIRE_DAY * 5)
 
 
 def disk_cache(expiration_seconds):
