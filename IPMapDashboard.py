@@ -5,6 +5,9 @@ import requests
 import time
 import json
 import os
+import ipaddress
+import pandas as pd
+from datetime import datetime
 
 from geoip2.database import Reader
 reader = Reader('GeoLite2-City.mmdb')
@@ -20,6 +23,14 @@ GEOCODE_CACHE_FILE = 'geocode_cache.json'
 LOCATION_METADATA_FILE = 'location_metadata.json'
 # File for storing saved addresses
 SAVED_ADDRESSES_FILE = 'saved_addresses.json'
+
+def validate_ip_address(ip):
+    """Validate IP address format"""
+    try:
+        ipaddress.ip_address(ip.strip())
+        return True
+    except ValueError:
+        return False
 
 def load_geocode_cache():
     """Load existing geocoding cache from file"""
@@ -93,7 +104,8 @@ def get_location_from_ip(ip):
         city = response.city.name if response.city else 'Unknown'
         country = response.country.name if response.country else 'Unknown'
         return lat, lon, city, country
-    except:
+    except Exception as e:
+        st.warning(f"Could not geolocate IP {ip}: {str(e)}")
         return None, None, None, None
 
 def geocode_address(address):
@@ -182,6 +194,26 @@ def geocode_address(address):
         # st.error(f"❌ Error geocoding address '{address}': {str(e)}")
         return None, None, None, True  # True = from API
 
+def export_locations_to_csv(locations, location_metadata):
+    """Export locations to CSV format"""
+    data = []
+    for loc in locations:
+        location_key = get_location_key(loc['lat'], loc['lon'], loc['label'])
+        metadata = location_metadata.get(location_key, {})
+        
+        data.append({
+            'Type': loc['type'],
+            'Label': loc['label'],
+            'Latitude': loc['lat'],
+            'Longitude': loc['lon'],
+            'Notes': metadata.get('notes', ''),
+            'Complete': metadata.get('is_complete', False),
+            'Last Updated': metadata.get('last_updated', '')
+        })
+    
+    df = pd.DataFrame(data)
+    return df.to_csv(index=False)
+
 def main():
     st.title('IP Address & Physical Address Map Viewer')
     
@@ -193,9 +225,8 @@ def main():
     if 'selected_location_index' not in st.session_state:
         st.session_state.selected_location_index = 0
     
-    # Initialize input variables
-    ip_list = []
-    address_list = []
+    # Initialize locations list early to fix the manual location bug
+    locations = []
     
     # Sidebar with tabs
     sidebar_tab1, sidebar_tab2 = st.sidebar.tabs(["Map Options", "Debug"])
@@ -203,6 +234,14 @@ def main():
     with sidebar_tab1:
         st.header("Map Options")
         show_predefined = st.checkbox("Show predefined addresses", value=True)
+        
+        # Filter options
+        st.subheader("Filters")
+        show_completed = st.checkbox("Show completed locations", value=True)
+        show_incomplete = st.checkbox("Show incomplete locations", value=True)
+        show_ip = st.checkbox("Show IP addresses", value=True)
+        show_addresses = st.checkbox("Show physical addresses", value=True)
+        show_manual = st.checkbox("Show manual entries", value=True)
         
         # Location editing interface (will be populated after locations are processed)
         st.header("Edit Location Details")
@@ -260,21 +299,17 @@ def main():
                 'icon': 'map-pin'
             })
             st.success(f"Added manual location for {manual_address}")
-    
 
-    
     # Process locations
-    locations = []
-    
     # Process saved addresses first
     saved_ip_list = saved_addresses.get('ip_addresses', [])
     saved_physical_list = saved_addresses.get('physical_addresses', [])
     
     # Process saved IP addresses
-    if saved_ip_list:
+    if saved_ip_list and show_ip:
         for ip in saved_ip_list:
             ip = ip.strip()
-            if ip:
+            if ip and validate_ip_address(ip):
                 lat, lon, city, country = get_location_from_ip(ip)
                 if lat and lon:
                     locations.append({
@@ -287,7 +322,7 @@ def main():
                     })
     
     # Process saved physical addresses
-    if saved_physical_list:
+    if saved_physical_list and show_addresses:
         for address in saved_physical_list:
             address = address.strip()
             if address:
@@ -304,47 +339,9 @@ def main():
                 # Only sleep if we made an API call
                 if from_api:
                     time.sleep(1)  # Rate limiting for Nominatim API
-    
-    # Process new IP addresses from input
-    if ip_list:
-        st.info("Processing IP addresses...")
-        for ip in ip_list:
-            ip = ip.strip()
-            if ip:
-                lat, lon, city, country = get_location_from_ip(ip)
-                if lat and lon:
-                    locations.append({
-                        'lat': lat, 
-                        'lon': lon, 
-                        'type': 'IP',
-                        'label': f'IP: {ip}',
-                        'popup': f'IP: {ip}<br>City: {city}<br>Country: {country}',
-                        'icon': 'globe'
-                    })
-    
-    # Process physical addresses
-    if address_list:
-        st.info("Processing physical addresses...")
-        for address in address_list:
-            address = address.strip()
-            if address:
-                lat, lon, display_name, from_api = geocode_address(address)
-                if lat and lon:
-                    locations.append({
-                        'lat': lat, 
-                        'lon': lon, 
-                        'type': 'Address',
-                        'label': f'Address: {address[:50]}...' if len(address) > 50 else f'Address: {address}',
-                        'popup': f'Address: {address}<br>Location: {display_name}',
-                        'icon': 'home'
-                    })
-                # Only sleep if we made an API call
-                if from_api:
-                    time.sleep(1)  # Rate limiting for Nominatim API
 
-    
     # Add predefined addresses if selected
-    if show_predefined:
+    if show_predefined and show_addresses:
         st.info("Processing predefined addresses...")
         for address in PREDEFINED_ADDRESSES:
             lat, lon, display_name, from_api = geocode_address(address)
@@ -361,16 +358,55 @@ def main():
             if from_api:
                 time.sleep(1)  # Rate limiting for Nominatim API
 
+    # Apply filters
+    filtered_locations = []
+    for loc in locations:
+        location_key = get_location_key(loc['lat'], loc['lon'], loc['label'])
+        metadata = location_metadata.get(location_key, {})
+        is_complete = metadata.get('is_complete', False)
+        
+        # Apply completion filter
+        if is_complete and not show_completed:
+            continue
+        if not is_complete and not show_incomplete:
+            continue
+            
+        # Apply type filter
+        if loc['type'] == 'IP' and not show_ip:
+            continue
+        if loc['type'] == 'Address' and not show_addresses:
+            continue
+        if loc['type'] == 'Manual' and not show_manual:
+            continue
+            
+        filtered_locations.append(loc)
     
     # Display map
-    if locations:
+    if filtered_locations:
         st.subheader("Map View")
+        
+        # Export functionality
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("📊 Export to CSV"):
+                csv_data = export_locations_to_csv(filtered_locations, location_metadata)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv_data,
+                    file_name=f"locations_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+        
+        with col2:
+            if st.button("🗺️ Export Map"):
+                # Create a simple map export (could be enhanced with more features)
+                st.info("Map export functionality could be added here")
         
         # Create map
         m = folium.Map(location=[0, 0], zoom_start=2)
         
         # Add markers with different colors for different types
-        for i, loc in enumerate(locations):
+        for i, loc in enumerate(filtered_locations):
             # Generate unique key for this location
             location_key = get_location_key(loc['lat'], loc['lon'], loc['label'])
             
@@ -430,21 +466,19 @@ def main():
             
             # Add click handler to select this location in sidebar
             marker.add_to(m)
-            
 
-        
         # Fit bounds to show all markers
-        if len(locations) > 1:
-            bounds = [[loc['lat'], loc['lon']] for loc in locations]
+        if len(filtered_locations) > 1:
+            bounds = [[loc['lat'], loc['lon']] for loc in filtered_locations]
             m.fit_bounds(bounds)
         
         st_folium(m, width=800, height=600)
         
         # Location editing interface in sidebar
-        if locations:
+        if filtered_locations:
             # Create location options for the sidebar (remove "Predefined:" prefix for cleaner display)
             location_options = []
-            for loc in locations:
+            for loc in filtered_locations:
                 # Remove "Predefined:" prefix from labels for cleaner dropdown
                 clean_label = loc['label'].replace('Predefined: ', '') if loc['label'].startswith('Predefined: ') else loc['label']
                 location_options.append(f"{clean_label} ({loc['lat']:.6f}, {loc['lon']:.6f})")
@@ -486,15 +520,13 @@ def main():
                         st.session_state.selected_location_index = actual_index
                 else:
                     selected_location = None
-                
 
-                
                 if selected_location:
                     # Find the selected location
                     try:
                         # Find the index in the cleaned options list
                         selected_index = location_options.index(selected_location)
-                        selected_loc = locations[selected_index]
+                        selected_loc = filtered_locations[selected_index]
                         location_key = get_location_key(selected_loc['lat'], selected_loc['lon'], selected_loc['label'])
                         
                         # Get current metadata
@@ -534,226 +566,133 @@ def main():
         
         # Display summary
         st.subheader("Summary")
-        ip_count = len([loc for loc in locations if loc['type'] == 'IP'])
-        address_count = len([loc for loc in locations if loc['type'] == 'Address'])
-        manual_count = len([loc for loc in locations if loc['type'] == 'Manual'])
+        ip_count = len([loc for loc in filtered_locations if loc['type'] == 'IP'])
+        address_count = len([loc for loc in filtered_locations if loc['type'] == 'Address'])
+        manual_count = len([loc for loc in filtered_locations if loc['type'] == 'Manual'])
         
         # Count predefined addresses (those with "Predefined:" in the label)
-        predefined_count = len([loc for loc in locations if loc['type'] == 'Address' and 'Predefined:' in loc['label']])
+        predefined_count = len([loc for loc in filtered_locations if loc['type'] == 'Address' and 'Predefined:' in loc['label']])
         regular_address_count = address_count - predefined_count
         
         # Count completed locations
         completed_count = 0
-        for loc in locations:
+        for loc in filtered_locations:
             location_key = get_location_key(loc['lat'], loc['lon'], loc['label'])
             metadata = location_metadata.get(location_key, {})
             if metadata.get('is_complete', False):
                 completed_count += 1
         
-        st.write(f"Total locations: {len(locations)}")
+        st.write(f"Total locations: {len(filtered_locations)}")
         st.write(f"Completed locations: {completed_count}")
-        st.write(f"Incomplete locations: {len(locations) - completed_count}")
+        st.write(f"Incomplete locations: {len(filtered_locations) - completed_count}")
         st.write(f"IP addresses: {ip_count}")
         st.write(f"Physical addresses: {regular_address_count}")
         st.write(f"Predefined addresses: {predefined_count}")
         st.write(f"Manual entries: {manual_count}")
         
-        # Input areas at the bottom
-        st.subheader("Add New Locations")
-        
-        # Show current saved addresses
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.subheader("Current Saved IP Addresses")
-            if saved_ip_list:
-                for ip in saved_ip_list:
-                    st.write(f"• {ip}")
-            else:
-                st.write("No saved IP addresses")
-        
-        with col2:
-            st.subheader("Current Saved Physical Addresses")
-            if saved_physical_list:
-                for addr in saved_physical_list:
-                    st.write(f"• {addr}")
-            else:
-                st.write("No saved physical addresses")
-        
-        # Add new addresses
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.subheader("Add IP Addresses")
-            ip_list_str = st.text_area('Paste new IP addresses, one per line', 
-                                      placeholder="8.8.8.8\n1.1.1.1\n208.67.222.222")
-            ip_list = ip_list_str.splitlines() if ip_list_str.strip() else []
-        
-        with col2:
-            st.subheader("Add Physical Addresses")
-            address_input = st.text_area('Paste new physical addresses, one per line',
-                                        placeholder="123 Main St, Lansing, MI 48911\n456 Oak Ave, Grand Rapids, MI 49503")
-            address_list = address_input.splitlines() if address_input.strip() else []
-        
-        # Process new locations
-        new_locations = []
-        
-        # Process IP addresses
-        if ip_list:
-            for ip in ip_list:
-                ip = ip.strip()
-                if ip:
-                    lat, lon, city, country = get_location_from_ip(ip)
-                    if lat and lon:
-                        new_locations.append({
-                            'lat': lat, 
-                            'lon': lon, 
-                            'type': 'IP',
-                            'label': f'IP: {ip}',
-                            'popup': f'IP: {ip}<br>City: {city}<br>Country: {country}',
-                            'icon': 'globe'
-                        })
-        
-        # Process physical addresses
-        if address_list:
-            for address in address_list:
-                address = address.strip()
-                if address:
-                    lat, lon, display_name, from_api = geocode_address(address)
-                    if lat and lon:
-                        new_locations.append({
-                            'lat': lat, 
-                            'lon': lon, 
-                            'type': 'Address',
-                            'label': f'Address: {address[:50]}...' if len(address) > 50 else f'Address: {address}',
-                            'popup': f'Address: {address}<br>Location: {display_name}',
-                            'icon': 'home'
-                        })
-                    # Only sleep if we made an API call
-                    if from_api:
-                        time.sleep(1)  # Rate limiting for Nominatim API
-        
-        # Add new locations to the main list (when locations exist)
-        if new_locations:
-            locations.extend(new_locations)
-            
-            # Save new addresses to persistent storage
-            if ip_list:
-                new_ip_addresses = [ip.strip() for ip in ip_list if ip.strip()]
-                saved_addresses['ip_addresses'].extend(new_ip_addresses)
-                # Remove duplicates
-                saved_addresses['ip_addresses'] = list(set(saved_addresses['ip_addresses']))
-            
-            if address_list:
-                new_physical_addresses = [addr.strip() for addr in address_list if addr.strip()]
-                saved_addresses['physical_addresses'].extend(new_physical_addresses)
-                # Remove duplicates
-                saved_addresses['physical_addresses'] = list(set(saved_addresses['physical_addresses']))
-            
-            # Save to file
-            save_addresses(saved_addresses['ip_addresses'], saved_addresses['physical_addresses'])
-            
-            st.success(f"Added {len(new_locations)} new locations to the map and saved addresses!")
-            st.rerun()
-        
     else:
         st.warning('No valid locations found. Please add some IP addresses or physical addresses.')
+    
+    # Input areas at the bottom (consolidated to avoid duplication)
+    st.subheader("Add New Locations")
+    
+    # Show current saved addresses
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.subheader("Current Saved IP Addresses")
+        if saved_ip_list:
+            for ip in saved_ip_list:
+                st.write(f"• {ip}")
+        else:
+            st.write("No saved IP addresses")
+    
+    with col2:
+        st.subheader("Current Saved Physical Addresses")
+        if saved_physical_list:
+            for addr in saved_physical_list:
+                st.write(f"• {addr}")
+        else:
+            st.write("No saved physical addresses")
+    
+    # Add new addresses
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.subheader("Add IP Addresses")
+        ip_list_str = st.text_area('Paste new IP addresses, one per line', 
+                                  placeholder="8.8.8.8\n1.1.1.1\n208.67.222.222")
+        ip_list = ip_list_str.splitlines() if ip_list_str.strip() else []
+    
+    with col2:
+        st.subheader("Add Physical Addresses")
+        address_input = st.text_area('Paste new physical addresses, one per line',
+                                    placeholder="123 Main St, Lansing, MI 48911\n456 Oak Ave, Grand Rapids, MI 49503")
+        address_list = address_input.splitlines() if address_input.strip() else []
+    
+    # Process new locations
+    new_locations = []
+    
+    # Process IP addresses
+    if ip_list:
+        st.info("Processing IP addresses...")
+        for ip in ip_list:
+            ip = ip.strip()
+            if ip and validate_ip_address(ip):
+                lat, lon, city, country = get_location_from_ip(ip)
+                if lat and lon:
+                    new_locations.append({
+                        'lat': lat, 
+                        'lon': lon, 
+                        'type': 'IP',
+                        'label': f'IP: {ip}',
+                        'popup': f'IP: {ip}<br>City: {city}<br>Country: {country}',
+                        'icon': 'globe'
+                    })
+            elif ip:
+                st.warning(f"Invalid IP address format: {ip}")
+    
+    # Process physical addresses
+    if address_list:
+        st.info("Processing physical addresses...")
+        for address in address_list:
+            address = address.strip()
+            if address:
+                lat, lon, display_name, from_api = geocode_address(address)
+                if lat and lon:
+                    new_locations.append({
+                        'lat': lat, 
+                        'lon': lon, 
+                        'type': 'Address',
+                        'label': f'Address: {address[:50]}...' if len(address) > 50 else f'Address: {address}',
+                        'popup': f'Address: {address}<br>Location: {display_name}',
+                        'icon': 'home'
+                    })
+                # Only sleep if we made an API call
+                if from_api:
+                    time.sleep(1)  # Rate limiting for Nominatim API
+    
+    # Add new locations to the main list and save
+    if new_locations:
+        locations.extend(new_locations)
         
-        # Input areas when no locations exist
-        st.subheader("Add New Locations")
-        
-        # Show current saved addresses
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.subheader("Current Saved IP Addresses")
-            if saved_ip_list:
-                for ip in saved_ip_list:
-                    st.write(f"• {ip}")
-            else:
-                st.write("No saved IP addresses")
-        
-        with col2:
-            st.subheader("Current Saved Physical Addresses")
-            if saved_physical_list:
-                for addr in saved_physical_list:
-                    st.write(f"• {addr}")
-            else:
-                st.write("No saved physical addresses")
-        
-        # Add new addresses
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.subheader("Add IP Addresses")
-            ip_list_str = st.text_area('Paste new IP addresses, one per line', 
-                                      placeholder="8.8.8.8\n1.1.1.1\n208.67.222.222")
-            ip_list = ip_list_str.splitlines() if ip_list_str.strip() else []
-        
-        with col2:
-            st.subheader("Add Physical Addresses")
-            address_input = st.text_area('Paste new physical addresses, one per line',
-                                        placeholder="123 Main St, Lansing, MI 48911\n456 Oak Ave, Grand Rapids, MI 49503")
-            address_list = address_input.splitlines() if address_input.strip() else []
-        
-        # Process new locations
-        new_locations = []
-        
-        # Process IP addresses
+        # Save new addresses to persistent storage
         if ip_list:
-            for ip in ip_list:
-                ip = ip.strip()
-                if ip:
-                    lat, lon, city, country = get_location_from_ip(ip)
-                    if lat and lon:
-                        new_locations.append({
-                            'lat': lat, 
-                            'lon': lon, 
-                            'type': 'IP',
-                            'label': f'IP: {ip}',
-                            'popup': f'IP: {ip}<br>City: {city}<br>Country: {country}',
-                            'icon': 'globe'
-                        })
+            new_ip_addresses = [ip.strip() for ip in ip_list if ip.strip() and validate_ip_address(ip)]
+            saved_addresses['ip_addresses'].extend(new_ip_addresses)
+            # Remove duplicates
+            saved_addresses['ip_addresses'] = list(set(saved_addresses['ip_addresses']))
         
-        # Process physical addresses
         if address_list:
-            for address in address_list:
-                address = address.strip()
-                if address:
-                    lat, lon, display_name, from_api = geocode_address(address)
-                    if lat and lon:
-                        new_locations.append({
-                            'lat': lat, 
-                            'lon': lon, 
-                            'type': 'Address',
-                            'label': f'Address: {address[:50]}...' if len(address) > 50 else f'Address: {address}',
-                            'popup': f'Address: {address}<br>Location: {display_name}',
-                            'icon': 'home'
-                        })
-                    # Only sleep if we made an API call
-                    if from_api:
-                        time.sleep(1)  # Rate limiting for Nominatim API
+            new_physical_addresses = [addr.strip() for addr in address_list if addr.strip()]
+            saved_addresses['physical_addresses'].extend(new_physical_addresses)
+            # Remove duplicates
+            saved_addresses['physical_addresses'] = list(set(saved_addresses['physical_addresses']))
         
-        # Add new locations to the main list (when no locations exist)
-        if new_locations:
-            locations.extend(new_locations)
-            
-            # Save new addresses to persistent storage
-            if ip_list:
-                new_ip_addresses = [ip.strip() for ip in ip_list if ip.strip()]
-                saved_addresses['ip_addresses'].extend(new_ip_addresses)
-                # Remove duplicates
-                saved_addresses['ip_addresses'] = list(set(saved_addresses['ip_addresses']))
-            
-            if address_list:
-                new_physical_addresses = [addr.strip() for addr in address_list if addr.strip()]
-                saved_addresses['physical_addresses'].extend(new_physical_addresses)
-                # Remove duplicates
-                saved_addresses['physical_addresses'] = list(set(saved_addresses['physical_addresses']))
-            
-            # Save to file
-            save_addresses(saved_addresses['ip_addresses'], saved_addresses['physical_addresses'])
-            
-            st.success(f"Added {len(new_locations)} new locations to the map and saved addresses!")
-            st.rerun()
+        # Save to file
+        save_addresses(saved_addresses['ip_addresses'], saved_addresses['physical_addresses'])
+        
+        st.success(f"Added {len(new_locations)} new locations to the map and saved addresses!")
+        st.rerun()
 
 if __name__ == '__main__':
     main()
